@@ -40,6 +40,10 @@ type PickOptions struct {
 	// Runs once the first frame is on screen, for work that should not
 	// delay it.
 	AfterFirstDraw func()
+	// The split to start with, and where to keep it when Ctrl+←/→ changed
+	// it.
+	Layout     Layout
+	SaveLayout func(Layout)
 }
 
 var ErrCancelled = errors.New("Cancelled.")
@@ -124,6 +128,34 @@ type picker struct {
 	offset int
 	// Stands in for time.Now in tests, so relative times are stable.
 	clock func() time.Time
+
+	layout        Layout
+	layoutChanged bool
+	// Width the last frame split between list and card; zero while the card
+	// is hidden, which makes resizing a no-op.
+	splitWidth int
+}
+
+// resize moves the divider between list and card by delta percent, staying
+// within what the current width can actually show, so pressing the other way
+// always moves it straight back.
+func (p *picker) resize(delta int) {
+	width := p.splitWidth
+	if width == 0 {
+		return
+	}
+	current := p.layout.ListPercent
+	if current == 0 {
+		list, _ := splitWidths(width, 0)
+		current = (list*100 + width/2) / width
+	}
+	lowest := (minListCols*100 + width - 1) / width
+	highest := (width - minCardCols - 1) * 100 / width
+	next := clamp(current+delta, lowest, max(lowest, highest))
+	if next != p.layout.ListPercent {
+		p.layout.ListPercent = next
+		p.layoutChanged = true
+	}
 }
 
 func (p *picker) indexOfTarget(wanted *Account) int {
@@ -204,6 +236,11 @@ func (p *picker) handle(key Key) (*PickResult, error) {
 	case key.Ctrl && key.Name == "y":
 		value := !p.yoloFor(p.currentTarget())
 		p.yolo = &value
+	// Ctrl+←/→ drag the divider between the list and the card.
+	case key.Ctrl && key.Name == "right":
+		p.resize(resizeStep)
+	case key.Ctrl && key.Name == "left":
+		p.resize(-resizeStep)
 	case key.Ctrl && key.Name == "f":
 		// Fork follows the same route as Enter, but branches into a new
 		// session instead of writing more turns into the picked one.
@@ -251,7 +288,8 @@ func (p *picker) handle(key Key) (*PickResult, error) {
 }
 
 func PickSession(sessions []Session, initialQuery string, options PickOptions) (PickResult, error) {
-	p := &picker{sessions: sessions, targets: options.Targets, options: options, query: initialQuery}
+	p := &picker{sessions: sessions, targets: options.Targets, options: options, query: initialQuery,
+		layout: options.Layout}
 	p.pinned = p.indexOfTarget(options.InitialTarget)
 	p.refilter()
 
@@ -269,6 +307,9 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 	restore := func() {
 		fmt.Fprint(out, "\x1b[?25h\x1b[?1049l")
 		_ = term.Restore(in, state)
+		if p.layoutChanged && options.SaveLayout != nil {
+			options.SaveLayout(p.layout)
+		}
 	}
 
 	draw := func() {

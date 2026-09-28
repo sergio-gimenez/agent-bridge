@@ -101,6 +101,7 @@ func PrintHelp(out io.Writer) {
 		"  Ctrl+T / Shift+Tab    cycle the target forwards / backwards",
 		"  Tab                   open in the next tool, as a seeded fork",
 		"  Ctrl+Y                toggle yolo (bypass permission checks) for this launch",
+		"  Ctrl+Left/Right       resize the list and the card (remembered)",
 		"  Esc                   cancel",
 		"",
 		"Config: ~/.config/agentbridge/config.json",
