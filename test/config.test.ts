@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { parseArgs } from "../src/cli-options.js"
-import { configuredTargets, parseConfig } from "../src/config.js"
+import { configuredTargets, defaultSkipPermissions, parseConfig } from "../src/config.js"
 import { buildContinuationPrompt } from "../src/seed.js"
 import type { SessionPreview } from "../src/types.js"
 
@@ -97,6 +97,34 @@ describe("parseConfig", () => {
       "cc2",
       "cx1",
     ])
+  })
+
+  it("reads per-account and OpenCode skipPermissions", () => {
+    const config = parseConfig(JSON.stringify({
+      opencode: { skipPermissions: true },
+      claudeAccounts: [{ name: "cc1" }, { name: "cc2", skipPermissions: true }],
+      codexAccounts: [{ name: "cx1", skipPermissions: "yes" }],
+    }))
+
+    expect(config.opencode.skipPermissions).toBe(true)
+    expect(config.claudeAccounts[1]).toEqual({ tool: "claude", name: "cc2", skipPermissions: true })
+    // Non-booleans are ignored rather than read as truthy.
+    expect(config.codexAccounts[0]).toEqual({ tool: "codex", name: "cx1" })
+  })
+
+  it("resolves skipPermissions as CLI flag, then target, then global", () => {
+    const config = parseConfig(JSON.stringify({
+      skipPermissions: true,
+      opencode: { skipPermissions: false },
+      claudeAccounts: [{ name: "cc1" }, { name: "cc2", skipPermissions: false }],
+    }))
+    const [oc, cc1, cc2] = configuredTargets(config)
+
+    expect(defaultSkipPermissions(config, undefined, oc)).toBe(false)
+    expect(defaultSkipPermissions(config, undefined, cc1)).toBe(true)
+    expect(defaultSkipPermissions(config, undefined, cc2)).toBe(false)
+    expect(defaultSkipPermissions(config, true, cc2)).toBe(true)
+    expect(defaultSkipPermissions(config, false, cc1)).toBe(false)
   })
 
   // Tab lands on a tool without naming an account, and takes the first one

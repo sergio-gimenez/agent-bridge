@@ -34,6 +34,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `npm run install:local` suggests the plugins that share Claude Code memory
   with OpenCode and Codex, for tools that are installed and don't have one set
   up yet.
+- `npm run install:local` also suggests `claude-mermaid`, the MCP server that
+  renders Mermaid diagrams, for whichever of the three tools don't have it
+  configured yet.
+- `Ctrl+Y` in the picker toggles yolo (permission checks bypassed) for the
+  launch about to be made; a red `YOLO` on the status line says it is on.
+- `skipPermissions` can be set per agent: on any entry of `claudeAccounts` or
+  `codexAccounts`, or under `"opencode"`. It follows the target, and sits
+  between the `--yolo`/`--safe` flags and the global default.
 
 ### Changed
 

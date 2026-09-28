@@ -7,6 +7,9 @@ export type Account = {
   name: string
   // The tool's isolated home. Omit for the tool's own default home.
   home?: string
+  // Launch this account with permission checks bypassed by default. Unset
+  // defers to the global config setting.
+  skipPermissions?: boolean
 }
 
 export type SessionPreview = {

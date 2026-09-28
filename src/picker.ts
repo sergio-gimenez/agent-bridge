@@ -13,6 +13,8 @@ export type PickResult = {
   session: SessionPreview
   target: Account
   mode: PickMode
+  // Set only when Ctrl+Y was used: the caller's own default applies otherwise.
+  skipPermissions?: boolean
 }
 
 function clearScreen() {
@@ -45,6 +47,10 @@ function blue(value: string) {
 
 function green(value: string) {
   return `\x1b[32m${value}\x1b[0m`
+}
+
+function red(value: string) {
+  return `\x1b[1;31m${value}\x1b[0m`
 }
 
 function sessionLabel(session: SessionPreview) {
@@ -249,6 +255,9 @@ export async function pickSession(
     // Every place a session can be opened, in cycling order.
     targets?: Account[]
     initialTarget?: Account
+    // Whether a launch into this target bypasses permission checks when
+    // Ctrl+Y has not been pressed.
+    skipPermissions?: (target: Account) => boolean
   },
 ): Promise<PickResult> {
   const rl = readline.createInterface({
@@ -290,6 +299,17 @@ export async function pickSession(
     pinnedIndex = nextTarget(targets, from, step)
   }
 
+  // Ctrl+Y flips yolo for this one launch. Until then each target keeps its
+  // configured default, so the hint tracks whatever the route lands on.
+  let yoloOverride: boolean | undefined
+  const yoloFor = (target?: Account) =>
+    yoloOverride ?? (target ? (options?.skipPermissions?.(target) ?? false) : false)
+
+  const finish = (session: SessionPreview, target: Account | undefined, mode?: PickMode) => ({
+    ...enterDestination(session, target, mode),
+    ...(yoloOverride === undefined ? {} : { skipPermissions: yoloOverride }),
+  })
+
   const render = () => {
     filtered = searchSessions(sessions, query)
     activeIndex = clampIndex(activeIndex, filtered.length)
@@ -330,7 +350,14 @@ export async function pickSession(
       : "No target configured."
     process.stdout.write(`${dim(targetHint)}\n`)
     process.stdout.write(`Query: ${query}\n`)
-    process.stdout.write(`${dim(`${filtered.length} matches  Page ${pageIndex + 1}/${pageCount}`)}\n\n`)
+    // The permission mode sits on the short status line so the header never
+    // wraps: it must stay visible, since it decides what the agent may do.
+    const yoloHint = yoloFor(target)
+      ? `${red("YOLO")} ${dim("permission checks bypassed, Ctrl+Y to ask again")}`
+      : dim("Permissions: ask. Ctrl+Y: yolo")
+    process.stdout.write(
+      `${dim(`${filtered.length} matches  Page ${pageIndex + 1}/${pageCount}`)}  ${yoloHint}\n\n`,
+    )
 
     const selected = filtered[activeIndex]
     const left = renderList(filtered, activeIndex, pageStart, pageSize, query, leftWidth, rowTarget)
@@ -370,7 +397,13 @@ export async function pickSession(
         const selected = filtered[activeIndex]
         if (!selected) return
         cleanup()
-        resolve(enterDestination(selected, currentTarget()))
+        resolve(finish(selected, currentTarget()))
+        return
+      }
+
+      if (key.ctrl && key.name === "y") {
+        yoloOverride = !yoloFor(currentTarget())
+        render()
         return
       }
 
@@ -380,7 +413,7 @@ export async function pickSession(
         const selected = filtered[activeIndex]
         if (!selected) return
         cleanup()
-        resolve(enterDestination(selected, currentTarget(), "fork"))
+        resolve(finish(selected, currentTarget(), "fork"))
         return
       }
 
@@ -399,7 +432,7 @@ export async function pickSession(
         const tabTarget = nextToolTarget(targets, selected.source, currentTarget())
         if (!tabTarget) return
         cleanup()
-        resolve(enterDestination(selected, tabTarget))
+        resolve(finish(selected, tabTarget))
         return
       }
 

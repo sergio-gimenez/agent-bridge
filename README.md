@@ -69,6 +69,7 @@ in [`demo/README.md`](demo/README.md).
 | `Ctrl+T` | Cycle the target forwards: OpenCode → each Claude account → each Codex account |
 | `Shift+Tab` | Cycle the target backwards |
 | `Tab` | Open in the *next tool* right away, as a transcript-seeded fork |
+| `Ctrl+Y` | Toggle yolo: bypass permission checks for this launch only |
 | `Esc` `Ctrl+C` | Cancel |
 
 ## Reading the list
@@ -150,6 +151,41 @@ third-party plugins let the other tools use the same files.
   codex plugin add codex-claude-memory-plugin@codex-claude-memory
   ```
 
+## Rendering diagrams in every tool
+
+A forked session often carries a diagram with it. [`claude-mermaid`](https://github.com/veelenga/claude-mermaid)
+is a single stdio MCP server that renders Mermaid and live-reloads a browser
+preview, so all three tools can point at the same binary and a diagram looks the
+same wherever the session lands. `npm run install:local` suggests it for the
+tools that don't have it wired up yet.
+
+```bash
+npm install -g claude-mermaid
+```
+
+- **Claude Code:** `claude mcp add --scope user mermaid claude-mermaid`, or
+  install the plugin with `/plugin marketplace add veelenga/claude-mermaid`.
+- **OpenCode:** add the server to `opencode.json`.
+
+  ```json
+  "mcp": {
+    "mermaid": { "type": "local", "command": ["claude-mermaid"], "enabled": true }
+  }
+  ```
+
+- **Codex:** add the server to `~/.codex/config.toml`.
+
+  ```toml
+  [mcp_servers.mermaid]
+  command = "claude-mermaid"
+  ```
+
+The repository also ships a `mermaid-diagrams` skill. It is written for Claude
+Code, but the file drops into `~/.codex/skills/` and
+`~/.config/opencode/skill/` as-is once you remove its `allowed-tools:` line,
+which names Claude Code's tool ids. The preview opens a local browser tab, so it
+is only useful for sessions running on your own machine.
+
 ## Multiple accounts
 
 Claude Code and Codex each keep credentials, config and session history under a
@@ -214,8 +250,32 @@ ocs --dangerous     # also --skip-permissions / --yolo
 ocs --safe          # force checks back on, overriding the config default
 ```
 
-Set the default in `~/.config/ocs/config.json` with `"skipPermissions": true`.
-The CLI flag wins per run.
+To go yolo just once, press `Ctrl+Y` in the picker. The status line turns into a
+red `YOLO` for the launch you are about to make; press it again to go back to
+asking. Nothing is saved.
+
+Defaults live in `~/.config/ocs/config.json`, globally or per agent:
+
+```json
+{
+  "skipPermissions": false,
+  "opencode": { "skipPermissions": true },
+  "claudeAccounts": [
+    { "name": "cc1" },
+    { "name": "cc2", "configDir": "~/.claude-cc2", "skipPermissions": true }
+  ],
+  "codexAccounts": [{ "name": "cx1", "skipPermissions": true }]
+}
+```
+
+What wins, strongest first:
+
+```
+Ctrl+Y in the picker  →  --yolo / --safe  →  the target's skipPermissions  →  global skipPermissions
+```
+
+The setting follows the *target*, not the session: forking a `cc1` session into
+`cx1` uses `cx1`'s default.
 
 > **Note**
 > Skipping permission checks lets the agent act on your filesystem without

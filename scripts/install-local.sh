@@ -59,3 +59,54 @@ if [ "${#tips[@]}" -gt 0 ]; then
   printf 'move with ocs keeps what the agent has learned about the project.\n'
   printf '%s\n' "${tips[@]}"
 fi
+
+# Same idea for tooling: a forked session that asked for a diagram should be
+# able to render it wherever it lands. claude-mermaid is one stdio MCP server,
+# so all three tools can point at the same binary.
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
+MERMAID_BIN="$(command -v claude-mermaid || true)"
+diagram_tips=()
+
+if [ -z "${MERMAID_BIN}" ]; then
+  diagram_tips+=(
+    ""
+    "  Install the server once:"
+    "    npm install -g claude-mermaid"
+  )
+  MERMAID_BIN="claude-mermaid"
+fi
+
+if has_tool claude "${CLAUDE_DIR}" \
+  && ! grep -qs 'claude-mermaid' "${HOME}/.claude.json"; then
+  diagram_tips+=(
+    ""
+    "  Claude Code:"
+    "    claude mcp add --scope user mermaid ${MERMAID_BIN}"
+  )
+fi
+
+if has_tool opencode "${OPENCODE_CONFIG_DIR}" \
+  && ! grep -qs 'claude-mermaid' "${OPENCODE_CONFIG_DIR}"/opencode.json*; then
+  diagram_tips+=(
+    ""
+    "  OpenCode: add the server to ${OPENCODE_CONFIG_DIR}/opencode.json"
+    "    \"mcp\": { \"mermaid\": { \"type\": \"local\","
+    "                 \"command\": [\"${MERMAID_BIN}\"], \"enabled\": true } }"
+  )
+fi
+
+if has_tool codex "${CODEX_DIR}" \
+  && ! grep -qs 'claude-mermaid' "${CODEX_DIR}/config.toml"; then
+  diagram_tips+=(
+    ""
+    "  Codex: add the server to ${CODEX_DIR}/config.toml"
+    "    [mcp_servers.mermaid]"
+    "    command = \"${MERMAID_BIN}\""
+  )
+fi
+
+if [ "${#diagram_tips[@]}" -gt 0 ]; then
+  printf '\nTip: render Mermaid diagrams in every tool, so a session you move with\n'
+  printf 'ocs can still draw one. https://github.com/veelenga/claude-mermaid\n'
+  printf '%s\n' "${diagram_tips[@]}"
+fi

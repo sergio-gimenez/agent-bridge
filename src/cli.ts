@@ -3,7 +3,7 @@
 import { getAllSessions } from "./aggregate.js"
 import { parseArgs } from "./cli-options.js"
 import { printHelp, printSessions } from "./cli-output.js"
-import { configuredTargets, loadConfig } from "./config.js"
+import { configuredTargets, defaultSkipPermissions, loadConfig } from "./config.js"
 import type { OcsConfig } from "./config.js"
 import {
   openClaudeFresh,
@@ -79,7 +79,8 @@ async function main() {
   }
 
   const config = loadConfig()
-  const skipPermissions = args.skipPermissions ?? config.skipPermissions
+  const skipPermissionsFor = (target: Account) =>
+    defaultSkipPermissions(config, args.skipPermissions, target)
   const initialTarget = resolveTarget(config, args.target)
 
   const sessions = getAllSessions({
@@ -96,10 +97,11 @@ async function main() {
   const picked = await pickSession(sessions, args.query, {
     targets: configuredTargets(config),
     initialTarget,
+    skipPermissions: skipPermissionsFor,
   })
 
   process.exitCode = await openWith(picked.session, picked.target, {
-    skipPermissions,
+    skipPermissions: picked.skipPermissions ?? skipPermissionsFor(picked.target),
     mode: picked.mode,
   })
 }
