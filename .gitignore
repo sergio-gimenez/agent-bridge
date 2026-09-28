@@ -1,5 +1,4 @@
-node_modules/
-dist/
+bin/
 
-# Generated demo fixture home (rebuild with `npm run demo:build`).
+# Generated demo fixture home (rebuild with `make demo-fixture`).
 demo/.fixture/

@@ -8,8 +8,8 @@
 <p align="center">
   <a href="https://github.com/sergio-gimenez/opencode-sessions/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/sergio-gimenez/opencode-sessions/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="Node >=20" src="https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg">
-  <img alt="Zero TUI dependencies" src="https://img.shields.io/badge/deps-1-lightgrey.svg">
+  <img alt="Go >=1.23" src="https://img.shields.io/badge/go-%3E%3D1.23-00ADD8.svg">
+  <img alt="Single static binary" src="https://img.shields.io/badge/binary-static-lightgrey.svg">
 </p>
 
 <p align="center">
@@ -30,14 +30,13 @@ searchable by the words you typed rather than only the title a tool gave it.
 
 ## Install
 
-Needs Node 20+ and at least one of OpenCode, Claude Code and Codex.
+Needs Go 1.23+ to build, and at least one of OpenCode, Claude Code and Codex.
+The result is a single static binary with no runtime to install.
 
 ```bash
 git clone https://github.com/sergio-gimenez/opencode-sessions.git
 cd opencode-sessions
-npm install
-npm run build
-npm run install:local     # puts `ocs` in ~/.local/bin, no root needed
+make install              # puts `ocs` in ~/.local/bin, no root needed
 ```
 
 Then:
@@ -49,7 +48,7 @@ ocs
 ## Try it without touching your own sessions
 
 ```bash
-npm run demo
+make demo
 ```
 
 That builds a synthetic history (two Claude accounts, two Codex accounts, an
@@ -136,7 +135,7 @@ history".
 A fork carries the conversation, not what the agent has saved to memory.
 Claude Code keeps that in `~/.claude/projects/<project>/memory/`, and two
 third-party plugins let the other tools use the same files.
-`npm run install:local` suggests whichever ones you're missing.
+`make install` suggests whichever ones you're missing.
 
 - **OpenCode:** [`opencode-claude-memory`](https://github.com/kuitos/opencode-claude-memory)
   reads and writes the memory directory and respects `CLAUDE_CONFIG_DIR`. Add
@@ -156,7 +155,7 @@ third-party plugins let the other tools use the same files.
 A forked session often carries a diagram with it. [`claude-mermaid`](https://github.com/veelenga/claude-mermaid)
 is a single stdio MCP server that renders Mermaid and live-reloads a browser
 preview, so all three tools can point at the same binary and a diagram looks the
-same wherever the session lands. `npm run install:local` suggests it for the
+same wherever the session lands. `make install` suggests it for the
 tools that don't have it wired up yet.
 
 ```bash
@@ -293,6 +292,7 @@ The setting follows the *target*, not the session: forking a `cc1` session into
 | `--codex-account <name>` | Same, named for Codex accounts |
 | `--dangerous`, `--skip-permissions`, `--yolo` | Bypass permission checks |
 | `--safe`, `--no-skip-permissions` | Force permission checks on |
+| `--rescan` | Ignore the session cache and rebuild it |
 | `--help`, `-h` | Usage |
 
 ### Dry run
@@ -317,6 +317,7 @@ would run CODEX_HOME=~/.codex-cx1 codex <transcript seed, 1655 chars>
 | Claude Code | `~/.claude/projects/**/*.jsonl`, plus each account's `configDir` | `CLAUDE_PROJECTS_PATH` |
 | Codex | `~/.codex/sessions/**/rollout-*.jsonl`, plus each account's `codexHome` | `CODEX_HOME`, `CODEX_SESSIONS_PATH` |
 | `ocs` config | `~/.config/ocs/config.json` | `OCS_CONFIG_PATH` |
+| `ocs` cache | `~/.cache/ocs/index.gob` | `OCS_CACHE_PATH`, `XDG_CACHE_HOME` |
 
 `ocs` skips a store that's missing or unreadable instead of dying on it, so not
 having OpenCode installed still gets you your Claude and Codex sessions.
@@ -326,15 +327,37 @@ one by moving it into `archived_sessions/`, so archived Codex sessions drop out
 of the list the way archived OpenCode ones do. Codex stores no title in the
 rollout, which is why a Codex row is titled by its opening prompt.
 
+## Why it starts fast
+
+Reading every transcript on every launch is what used to make `ocs` slow: on a
+machine with a few hundred sessions that is hundreds of megabytes of JSONL. Now
+`ocs` keeps a cache of what each transcript boiled down to and only reads what
+changed since the last launch:
+
+```mermaid
+flowchart LR
+  L[launch] -->|stat every .jsonl| C{size, mtime, inode<br/>vs cache}
+  C -->|unchanged| R[cached record]
+  C -->|grew, same head and tail bytes| A[parse only the appended lines]
+  C -->|new, shrunk or rewritten| F[parse the whole file]
+  L -->|list 200 newest sessions| O{time_updated<br/>vs cache}
+  O -->|unchanged| R
+  O -->|moved| Q[query that session's prompts]
+```
+
+Claude Code and Codex only ever append to a transcript, so the session you are
+in the middle of, usually the biggest and the only one that changed, costs just
+its new lines. The first launch builds the cache and takes as long as a full
+read; after that the picker is up in a few tens of milliseconds. The cache is
+safe to delete, and `ocs --rescan` rebuilds it.
+
 ## Development
 
 ```bash
-npm run dev          # run the picker from source
-npm run print        # list recent sessions, no TUI
-npm run demo         # picker against synthetic sessions, opening stubbed out
-npm run typecheck
-npm test
-npm run build
+go run ./cmd/ocs            # run the picker from source
+go run ./cmd/ocs --print    # list recent sessions, no TUI
+make demo                   # picker against synthetic sessions, opening stubbed out
+make vet test build
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

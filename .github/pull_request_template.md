@@ -8,13 +8,13 @@
 
 ## Checks
 
-- [ ] `npm run typecheck`
-- [ ] `npm test`
-- [ ] `npm run build`
-- [ ] Tried it against the demo fixture (`npm run demo`) if the picker changed
+- [ ] `make vet`
+- [ ] `make test`
+- [ ] `make build`
+- [ ] Tried it against the demo fixture (`make demo`) if the picker changed
 
 <!--
 If this changes what the picker renders, a before/after paste of the affected
-rows helps a lot. `npm run demo` gives you reproducible sessions to paste from
+rows helps a lot. `make demo` gives you reproducible sessions to paste from
 without exposing your own history.
 -->

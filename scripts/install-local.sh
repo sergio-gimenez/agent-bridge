@@ -10,14 +10,13 @@ LEGACY_TARGET="${BIN_DIR}/ocsessions"
 mkdir -p "${BIN_DIR}"
 cd "${ROOT_DIR}"
 
-npm run build >/dev/null
+command -v go >/dev/null || { echo "Go is required to build ocs: https://go.dev/dl/" >&2; exit 1; }
 
-cat >"${TARGET}" <<EOF
-#!/usr/bin/env bash
-exec node "${ROOT_DIR}/dist/cli.js" "\$@"
-EOF
-
-chmod +x "${TARGET}"
+# A real binary, not a wrapper script: nothing starts before ocs itself does.
+# Build beside the target and rename, so a running ocs is never overwritten in
+# place.
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "${TARGET}.new" ./cmd/ocs
+mv -f "${TARGET}.new" "${TARGET}"
 rm -f "${LEGACY_TARGET}"
 
 printf 'Installed ocs at %s\n' "${TARGET}"
