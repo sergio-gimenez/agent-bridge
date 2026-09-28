@@ -15,7 +15,7 @@ command -v go >/dev/null || { echo "Go is required to build ocs: https://go.dev/
 # A real binary, not a wrapper script: nothing starts before ocs itself does.
 # Build beside the target and rename, so a running ocs is never overwritten in
 # place.
-go build -trimpath -ldflags "-s -w" -o "${TARGET}.new" ./cmd/ocs
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "${TARGET}.new" ./cmd/ocs
 mv -f "${TARGET}.new" "${TARGET}"
 rm -f "${LEGACY_TARGET}"
 

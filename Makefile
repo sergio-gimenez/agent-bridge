@@ -1,7 +1,7 @@
 .PHONY: build test vet install demo demo-fixture demo-record demo-gif clean
 
 build:
-	go build -o bin/ocs ./cmd/ocs
+	CGO_ENABLED=0 go build -o bin/ocs ./cmd/ocs
 
 test:
 	go test ./...
