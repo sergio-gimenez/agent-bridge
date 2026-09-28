@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"syscall"
-	"unicode"
-	"unicode/utf8"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -45,21 +43,6 @@ type PickOptions struct {
 }
 
 var ErrCancelled = errors.New("Cancelled.")
-
-func dim(value string) string     { return "\x1b[2m" + value + "\x1b[0m" }
-func bold(value string) string    { return "\x1b[1m" + value + "\x1b[0m" }
-func cyan(value string) string    { return "\x1b[36m" + value + "\x1b[0m" }
-func yellow(value string) string  { return "\x1b[33m" + value + "\x1b[0m" }
-func magenta(value string) string { return "\x1b[35m" + value + "\x1b[0m" }
-func blue(value string) string    { return "\x1b[34m" + value + "\x1b[0m" }
-func green(value string) string   { return "\x1b[32m" + value + "\x1b[0m" }
-func red(value string) string     { return "\x1b[1;31m" + value + "\x1b[0m" }
-
-var sourceColor = map[Source]func(string) string{
-	SourceOpencode: magenta,
-	SourceClaude:   blue,
-	SourceCodex:    green,
-}
 
 func sessionLabel(session *Session) string {
 	return AccountLabel(session.Source, session.Account)
@@ -108,129 +91,6 @@ func destinationName(target *Account) string {
 	return ToolName(target.Tool) + " " + AccountLabel(target.Tool, target)
 }
 
-var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-func visibleWidth(value string) int {
-	return utf8.RuneCountInString(ansiPattern.ReplaceAllString(value, ""))
-}
-
-func truncatePlain(value string, width int) string {
-	if width <= 1 {
-		return ""
-	}
-	runes := []rune(value)
-	if len(runes) <= width {
-		return value
-	}
-	return string(runes[:width-1]) + "…"
-}
-
-func padLine(value string, width int) string {
-	if gap := width - visibleWidth(value); gap > 0 {
-		return value + strings.Repeat(" ", gap)
-	}
-	return value
-}
-
-func splitTerms(query string) []string {
-	return strings.Fields(strings.ToLower(query))
-}
-
-// highlightTerms marks every case-insensitive occurrence of a query term. It
-// works on plain text, so a match can never land inside an escape code.
-func highlightTerms(value string, terms []string) string {
-	if len(terms) == 0 {
-		return value
-	}
-	runes := []rune(value)
-	lowered := make([]rune, len(runes))
-	for i, r := range runes {
-		lowered[i] = unicode.ToLower(r)
-	}
-
-	marked := make([]bool, len(runes))
-	for _, term := range terms {
-		needle := []rune(term)
-		for start := 0; start+len(needle) <= len(lowered); start++ {
-			if string(lowered[start:start+len(needle)]) == term {
-				for k := range needle {
-					marked[start+k] = true
-				}
-			}
-		}
-	}
-
-	var builder strings.Builder
-	for i := 0; i < len(runes); {
-		j := i
-		for j < len(runes) && marked[j] == marked[i] {
-			j++
-		}
-		if marked[i] {
-			builder.WriteString(yellow(string(runes[i:j])))
-		} else {
-			builder.WriteString(string(runes[i:j]))
-		}
-		i = j
-	}
-	return builder.String()
-}
-
-func renderPreview(session *Session, terms []string, width int) []string {
-	// Every returned line's *visible* length must be <= width, or the
-	// terminal wraps it back to column 0 and smears the layout.
-	put := func(plain string) string { return highlightTerms(truncatePlain(plain, width), terms) }
-
-	lines := []string{
-		bold(put(session.Title)),
-		dim(put(ShortenHome(session.Directory))),
-		dim(truncatePlain(fmt.Sprintf("%s  %s  %s", session.UpdatedAtLabel, sessionLabel(session), session.ID), width)),
-		"",
-	}
-	if len(session.Prompts) > 0 {
-		lines = append(lines, cyan("Recent user prompts"))
-		for _, prompt := range session.Prompts {
-			lines = append(lines, put("- "+prompt))
-		}
-		lines = append(lines, "")
-	}
-	if len(session.AssistantSnippet) > 0 {
-		lines = append(lines, cyan("Recent assistant snippets"))
-		for _, snippet := range session.AssistantSnippet {
-			lines = append(lines, put("- "+snippet))
-		}
-	}
-	return lines
-}
-
-func renderList(items []Session, active, pageStart, pageSize int, terms []string, width int, target *Account) []string {
-	if len(items) == 0 {
-		return []string{dim("No matches")}
-	}
-	end := min(pageStart+pageSize, len(items))
-	indentWidth := max(4, width-6)
-
-	var lines []string
-	for index := pageStart; index < end; index++ {
-		session := &items[index]
-		marker := " "
-		if index == active {
-			marker = cyan(">")
-		}
-		badgeText := SessionBadgeText(session, target)
-		titleWidth := max(4, width-utf8.RuneCountInString(badgeText)-4)
-
-		lines = append(lines,
-			fmt.Sprintf("%s %s %s", marker, sourceColor[session.Source](badgeText),
-				highlightTerms(truncatePlain(session.Title, titleWidth), terms)),
-			dim("     "+highlightTerms(truncatePlain(ShortenHome(session.Directory), indentWidth), terms)),
-			dim("     "+truncatePlain(session.UpdatedAtLabel, indentWidth)),
-			"",
-		)
-	}
-	return lines
-}
-
 func clamp(value, low, high int) int {
 	return max(low, min(high, value))
 }
@@ -260,6 +120,10 @@ type picker struct {
 	// Ctrl+Y flips yolo for this one launch. Until then each target keeps its
 	// configured default, so the hint tracks whatever the route lands on.
 	yolo *bool
+	// First list row on screen; the window scrolls to follow the selection.
+	offset int
+	// Stands in for time.Now in tests, so relative times are stable.
+	clock func() time.Time
 }
 
 func (p *picker) indexOfTarget(wanted *Account) int {
@@ -322,89 +186,6 @@ func (p *picker) finish(session Session, target *Account, mode PickMode) PickRes
 func (p *picker) refilter() {
 	p.filtered = SearchSessions(p.sessions, p.query)
 	p.active = clampIndex(p.active, len(p.filtered))
-}
-
-func (p *picker) frame(cols, rows int) string {
-	// Layout: [left padded to leftWidth][2-space gap][right]. Keep the whole
-	// row <= cols-1 so no terminal wraps a line back to column 0.
-	leftWidth := clamp((cols*42+50)/100, 30, 64)
-	rightWidth := max(20, cols-leftWidth-3)
-
-	const headerRows, linesPerItem = 6, 4
-	availableRows := max(linesPerItem, rows-headerRows-1)
-	pageSize := max(1, availableRows/linesPerItem)
-	pageIndex := p.active / pageSize
-	pageStart := pageIndex * pageSize
-	pageCount := max(1, (len(p.filtered)+pageSize-1)/pageSize)
-
-	target := p.currentTarget()
-	rowTarget := BadgeTarget(target, p.pinned >= 0)
-	selected := p.selected()
-	terms := splitTerms(p.query)
-
-	var lines []string
-	lines = append(lines, fmt.Sprintf("%s  %s %s  %s %s  %s %s",
-		bold("Sessions"), magenta("[OC]"), dim("opencode"), blue("[CC*]"), dim("claude"), green("[CX*]"), dim("codex")))
-
-	enterName := "its own tool"
-	if target != nil {
-		enterName = destinationName(target)
-	}
-	openHint := fmt.Sprintf("Enter: %s. Ctrl+F: fork it.", enterName)
-	if selected != nil {
-		if tabTarget := NextToolTarget(p.targets, selected.Source, target); tabTarget != nil {
-			openHint += fmt.Sprintf(" Tab: %s.", destinationName(tabTarget))
-		}
-	}
-	lines = append(lines, dim(truncatePlain("Type to filter. ↑↓ move. PgUp/PgDn jump. "+openHint+" Esc cancels.", cols-1)))
-
-	targetHint := "No target configured."
-	if target != nil {
-		follows := ""
-		if p.pinned < 0 {
-			follows = " (follows the selection)"
-		}
-		targetHint = fmt.Sprintf("Target: %s%s. Ctrl+T / Shift+Tab cycle. Enter follows displayed route.",
-			AccountLabel(target.Tool, target), follows)
-	}
-	lines = append(lines, dim(truncatePlain(targetHint, cols-1)))
-	lines = append(lines, "Query: "+p.query)
-
-	// The permission mode sits on the short status line so the header never
-	// wraps: it must stay visible, since it decides what the agent may do.
-	yoloHint := dim("Permissions: ask. Ctrl+Y: yolo")
-	if p.yoloFor(target) {
-		yoloHint = red("YOLO") + " " + dim("permission checks bypassed, Ctrl+Y to ask again")
-	}
-	lines = append(lines,
-		dim(fmt.Sprintf("%d matches  Page %d/%d", len(p.filtered), pageIndex+1, pageCount))+"  "+yoloHint,
-		"")
-
-	left := renderList(p.filtered, p.active, pageStart, pageSize, terms, leftWidth, rowTarget)
-	right := []string{dim("No session selected")}
-	if selected != nil {
-		right = renderPreview(selected, terms, rightWidth)
-	}
-	if len(right) > availableRows {
-		right = right[:availableRows]
-	}
-	for i := 0; i < max(len(left), len(right)); i++ {
-		var l, r string
-		if i < len(left) {
-			l = left[i]
-		}
-		if i < len(right) {
-			r = right[i]
-		}
-		lines = append(lines, padLine(l, leftWidth)+"  "+r)
-	}
-	if len(lines) > rows {
-		lines = lines[:rows]
-	}
-
-	// Home, then overwrite each line and clear its tail, then clear below: no
-	// full-screen wipe, so nothing flickers between keystrokes.
-	return "\x1b[H" + strings.Join(lines, "\x1b[K\r\n") + "\x1b[K\x1b[J"
 }
 
 // handle applies one key. It returns a result, ErrCancelled, or neither when
@@ -482,10 +263,11 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 
 	out := os.Stdout
 	// Alternate screen: the picker draws over a blank page and leaves the
-	// shell's scrollback exactly as it was.
-	fmt.Fprint(out, "\x1b[?1049h")
+	// shell's scrollback exactly as it was. The real cursor is hidden; the
+	// query line draws its own.
+	fmt.Fprint(out, "\x1b[?1049h\x1b[?25l")
 	restore := func() {
-		fmt.Fprint(out, "\x1b[?1049l")
+		fmt.Fprint(out, "\x1b[?25h\x1b[?1049l")
 		_ = term.Restore(in, state)
 	}
 
@@ -516,30 +298,56 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 		}
 	}()
 
+	// apply runs every key in data. It reports whether the picker is done.
+	apply := func(data []byte) (bool, PickResult, error) {
+		for _, key := range DecodeKeys(data) {
+			result, err := p.handle(key)
+			if err != nil {
+				return true, PickResult{}, err
+			}
+			if result != nil {
+				return true, *result, nil
+			}
+		}
+		return false, PickResult{}, nil
+	}
+
+	// A lone ESC is either the Escape key or the start of a sequence whose
+	// rest has not arrived yet (a slow SSH link can split one). Hold it
+	// briefly instead of cancelling on half an arrow key.
+	var pending []byte
+	var escapeTimeout <-chan time.Time
+
 	draw()
 	if options.AfterFirstDraw != nil {
 		options.AfterFirstDraw()
 	}
 	for {
+		var data []byte
 		select {
 		case <-resized:
 			draw()
+			continue
+		case <-escapeTimeout:
+			data, pending, escapeTimeout = pending, nil, nil
 		case chunk, ok := <-input:
 			if !ok {
 				restore()
 				return PickResult{}, ErrCancelled
 			}
-			for _, key := range DecodeKeys(chunk) {
-				result, err := p.handle(key)
-				if err != nil || result != nil {
-					restore()
-					if err != nil {
-						return PickResult{}, err
-					}
-					return *result, nil
-				}
+			data = append(pending, chunk...)
+			pending, escapeTimeout = nil, nil
+			if cut := incompleteEscape(data); cut >= 0 {
+				data, pending = data[:cut], append([]byte(nil), data[cut:]...)
+				escapeTimeout = time.After(escapeWait)
 			}
-			draw()
 		}
+
+		done, result, err := apply(data)
+		if done {
+			restore()
+			return result, err
+		}
+		draw()
 	}
 }

@@ -41,8 +41,8 @@ pause 900; key "$DOWN"
 pause 1300; type_text "nebula"
 pause 1900
 
-# Second row is the Codex session. Its badge stays [CX1] and the preview fills
-# with its prompts, because the target follows the selection.
+# Second row is the Codex session. It shows plain CX1 and the card fills with
+# its prompts, because the target follows the selection.
 pause 900; key "$DOWN"
 pause 2200
 
@@ -50,9 +50,9 @@ pause 2200
 pause 1100; key "$UP"
 pause 1200
 
-# Cycle the target twice: CC1 -> CC2 -> CX1. The badge turns into a route,
-# [CC1->CX1], so Enter will carry this Claude session into Codex instead of
-# resuming it in Claude.
+# Cycle the target twice: CC1 -> CC2 -> CX1. The header shows target CX1, the
+# Claude rows grow a green arrow, and the card says Enter will carry this
+# session into Codex instead of resuming it in Claude.
 pause 1000; key "$CTRL_T"
 pause 1300; key "$CTRL_T"
 pause 2600
