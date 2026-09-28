@@ -1,6 +1,39 @@
 package ocs
 
-import "unicode/utf8"
+import (
+	"time"
+	"unicode/utf8"
+)
+
+// escapeWait is how long a trailing ESC waits for the rest of its sequence
+// before it counts as the Escape key.
+const escapeWait = 40 * time.Millisecond
+
+// incompleteEscape returns where a trailing, unfinished escape sequence starts
+// in data, or -1 when data ends cleanly.
+func incompleteEscape(data []byte) int {
+	for i := len(data) - 1; i >= 0 && i >= len(data)-16; i-- {
+		if data[i] != 0x1b {
+			continue
+		}
+		rest := data[i+1:]
+		switch {
+		case len(rest) == 0:
+			return i
+		case rest[0] == 'O' && len(rest) == 1:
+			return i
+		case rest[0] == '[':
+			for _, b := range rest[1:] {
+				if b >= 0x40 && b <= 0x7e {
+					return -1
+				}
+			}
+			return i
+		}
+		return -1
+	}
+	return -1
+}
 
 // Key is one decoded keypress: a named key, possibly with Ctrl held, or text to
 // append to the query.

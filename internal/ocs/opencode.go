@@ -130,17 +130,27 @@ func opencodeSession(row opencodeRow, cached cachedOpencode, scope SearchScope) 
 		search = append(search, cached.Assistant)
 	}
 	return Session{
-		ID:               row.ID,
-		Title:            row.Title,
-		Directory:        row.Directory,
-		ProjectID:        row.ProjectID,
-		Source:           SourceOpencode,
-		UpdatedAtMs:      float64(row.TimeUpdated),
-		UpdatedAtLabel:   FormatUpdatedAt(float64(row.TimeUpdated)),
-		Prompts:          truncateAll(cached.User),
-		AssistantSnippet: truncateAll(cached.Assistant),
+		ID:             row.ID,
+		Title:          row.Title,
+		Directory:      row.Directory,
+		ProjectID:      row.ProjectID,
+		Source:         SourceOpencode,
+		UpdatedAtMs:    float64(row.TimeUpdated),
+		UpdatedAtLabel: FormatUpdatedAt(float64(row.TimeUpdated)),
+		// The query returns newest first; every other source lists a
+		// conversation oldest first, so read it the same way.
+		Prompts:          truncateAll(reversed(cached.User)),
+		AssistantSnippet: truncateAll(reversed(cached.Assistant)),
 		SearchText:       joinLines(search...),
 	}
+}
+
+func reversed(values []string) []string {
+	out := make([]string, len(values))
+	for i, value := range values {
+		out[len(values)-1-i] = value
+	}
+	return out
 }
 
 func truncateAll(values []string) []string {

@@ -73,21 +73,24 @@ in [`demo/README.md`](demo/README.md).
 
 ## Reading the list
 
-Every row carries a badge saying where the session lives and where `Enter` will
-take it.
+Each row is one session: where it lives, its title, its project and how long
+ago it was last touched. The card on the right shows the selected session's
+directory, account and id, then your latest prompts and the assistant's latest
+replies, with your search terms highlighted.
 
-| Badge | Meaning |
+| Row starts with | Meaning |
 | --- | --- |
-| `[OC]` | An OpenCode session, resumed natively. |
-| `[CC1]` | A Claude session owned by account `cc1`, resumed natively. |
-| `[CX1]` | A Codex session owned by account `cx1`, resumed natively. |
-| `[CC1→CC2]` | Owned by `cc1` while `cc2` is the target, so `Enter` forks it into `cc2`. |
-| `[CX1→OC]` | A Codex session while OpenCode is the target, so `Enter` forks it into OpenCode. |
+| `OC` | An OpenCode session, resumed natively. |
+| `CC1` | A Claude session owned by account `cc1`, resumed natively. |
+| `CX1` | A Codex session owned by account `cx1`, resumed natively. |
+| `CC1 →` | Enter carries it to the pinned target (shown in the header) as a seeded fork. The arrow takes the target tool's colour. |
 
-Until you press `Ctrl+T` the target follows the selection, so every row shows a
-plain badge and `Enter` resumes whatever you picked in the account it already
-belongs to. Cycling pins a destination; from then on each row shows the route to
-it.
+Until you press `Ctrl+T` the target follows the selection, so rows show no
+arrow and `Enter` resumes whatever you picked in the account it already belongs
+to. Cycling pins a destination: the header shows `target CX2`, crossing rows get
+an arrow, and the card spells out where `Enter` will open the session. The
+footer always says what `Enter` and `Tab` will do, and a red `YOLO` in the
+header means the launch will skip permission checks.
 
 ## Forking a session
 
