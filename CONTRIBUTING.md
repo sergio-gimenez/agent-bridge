@@ -5,62 +5,71 @@ requests are welcome.
 
 ## Getting set up
 
+You need Go 1.23 or newer.
+
 ```bash
 git clone https://github.com/sergio-gimenez/opencode-sessions.git
 cd opencode-sessions
-npm install
-npm test
+make test
 ```
 
 Run the CLI straight from source without building:
 
 ```bash
-npm run dev            # the picker
-npm run print          # the 25 most recent sessions, no TUI
+go run ./cmd/ocs            # the picker
+go run ./cmd/ocs --print    # the 25 most recent sessions, no TUI
 ```
 
 ## Working against fake sessions
 
 You do not need real session history — or a second Claude account — to work on
-this. `npm run demo` builds a synthetic home under `demo/.fixture/` and runs the
+this. `make demo` builds a synthetic home under `demo/.fixture/` and runs the
 picker against it with opening stubbed out, so nothing is ever launched:
 
 ```bash
-npm run demo
+make demo
 ```
 
-Add or edit sessions in [`demo/data.mjs`](demo/data.mjs). See
+Add or edit sessions in [`demo/data.json`](demo/data.json). See
 [`demo/README.md`](demo/README.md) for how the fixture is laid out and how the
 README recording is regenerated.
 
 ## Before opening a pull request
 
 ```bash
-npm run typecheck
-npm test
-npm run build
+make vet
+make test
+make build
 ```
 
-CI runs the same three on Node 20, 22 and 24, plus a check that the demo
-fixture still builds and lists.
+CI runs the same three on Linux and macOS with Go 1.23 and the latest release,
+tests under the race detector, plus a check that the demo fixture still builds
+and lists.
 
 ## Notes on the code
 
-- `src/sessions.ts` reads OpenCode's SQLite store; `src/claude.ts` reads Claude
-  Code's JSONL transcripts. Both produce the same `SessionPreview` shape, and
-  `src/aggregate.ts` merges them.
-- Session ids are **not** portable between the two tools, or between Claude
-  accounts. Anything that crosses those boundaries goes through `src/seed.ts`,
-  which builds a fresh session seeded with the old transcript.
-- The picker (`src/picker.ts`) writes plain ANSI to stdout with no TUI
-  dependency. Every rendered line must fit the terminal width once escape codes
-  are stripped, or the layout smears — see the comments in `renderPreview`.
-- Tests are colocated in `test/` and use fixtures rather than touching a real
-  home directory. Keep it that way: nothing in the suite should read `~`.
+Everything lives in `internal/ocs`; `cmd/ocs` only wires it together.
+
+- `opencode.go` reads OpenCode's SQLite store; `claude.go` and `codex.go` read
+  the JSONL transcripts. All three produce the same `Session`, and
+  `aggregate.go` reads every store in parallel and merges them.
+- `cache.go` remembers what each transcript parsed to. Transcripts are
+  append-only, so a file that grew is parsed from where the last run stopped
+  (`parseState.Offset`). If you change what a parser extracts, bump
+  `cacheVersion`, or users keep the old parse until the file next changes.
+- Session ids are **not** portable between tools, or between accounts of one
+  tool. Anything that crosses those boundaries goes through `seed.go`, which
+  builds a fresh session seeded with the old transcript.
+- The picker (`picker.go`) writes plain ANSI with no TUI dependency. Every
+  rendered line must fit the terminal width once escape codes are stripped, or
+  the layout smears; `TestFrameFitsTheTerminal` guards this.
+- Opening a session `exec`s the tool, so `ocs` is gone by the time it runs.
+- Tests use temporary directories and fixtures rather than a real home
+  directory. Keep it that way: nothing in the suite should read `~`.
 
 ## Reporting bugs
 
-Include your OS, Node version, and whether the session was OpenCode or Claude
-Code. `npm run print` output (with paths redacted as you see fit) is usually
+Include your OS, how you installed `ocs`, and whether the session was OpenCode,
+Claude Code or Codex. `ocs --print` output (with paths redacted as you see fit) is usually
 enough to diagnose listing problems. For issues with opening a session, run with
 `OCS_DRY_RUN=1` and paste the command it would have run.

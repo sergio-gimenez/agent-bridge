@@ -13,8 +13,7 @@ all accounts can work in the same project directories.
 Install `ocs` locally when needed:
 
 ```bash
-npm install
-npm run install:local
+make install
 ```
 
 ## How isolation works

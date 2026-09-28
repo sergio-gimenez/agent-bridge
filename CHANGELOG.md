@@ -6,6 +6,24 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Rewritten in Go.** `ocs` is now a single static binary with no Node
+  runtime, and the picker is up in a few tens of milliseconds instead of
+  seconds. Output, keys, flags and config are unchanged.
+- A session cache at `~/.cache/ocs/index.gob` (`OCS_CACHE_PATH` to move it)
+  means a launch only reads transcripts that changed since the last one, and
+  for a transcript that grew, only its new lines. OpenCode prompts are
+  re-queried only for sessions whose `time_updated` moved. `--rescan` rebuilds
+  the cache.
+- Opening a session replaces the `ocs` process with the tool instead of
+  running it as a child.
+- The picker draws on the terminal's alternate screen, so your scrollback is
+  left as it was, and redraws in place instead of clearing on every keystroke.
+- Building and development go through `make` (`make install`, `make test`,
+  `make demo`, `make demo-record`) in place of the npm scripts. Demo sessions
+  now live in `demo/data.json`.
+
 ### Added
 
 - **Codex as a third tool.** `ocs` reads Codex rollouts from

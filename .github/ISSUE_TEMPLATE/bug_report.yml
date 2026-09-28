@@ -44,7 +44,7 @@ body:
   - type: input
     id: environment
     attributes:
-      label: OS, terminal and Node version
-      placeholder: "macOS 15, Ghostty, Node 22.11"
+      label: OS, terminal and Go version (if built from source)
+      placeholder: "macOS 15, Ghostty, go1.23.1"
     validations:
       required: true
