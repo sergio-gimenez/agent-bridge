@@ -16,6 +16,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   target shows as an arrow in the target tool's colour instead of a
   `[CC1→CX2]` badge on every row. Wide characters such as emoji and CJK no
   longer throw the columns out of line.
+- `Ctrl+←` / `Ctrl+→` resize the list against the card, and the split is
+  remembered in `~/.cache/ocs/layout.json`.
 - A split escape sequence (an arrow key arriving in two reads over a slow SSH
   link) no longer cancels the picker as if Escape had been pressed.
 - **Rewritten in Go.** `ocs` is now a single static binary with no Node

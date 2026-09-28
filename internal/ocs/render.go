@@ -213,9 +213,10 @@ func (p *picker) frame(cols, rows int) string {
 
 	listWidth := width
 	cardWidth := 0
+	p.splitWidth = 0
 	if cols >= cardMinCols && bodyRows >= cardMinRows {
-		listWidth = clamp(width*48/100, 44, 72)
-		cardWidth = width - listWidth - 1
+		listWidth, cardWidth = splitWidths(width, p.layout.ListPercent)
+		p.splitWidth = width
 	}
 
 	p.scrollTo(bodyRows)
@@ -237,7 +238,7 @@ func (p *picker) frame(cols, rows int) string {
 		}
 		lines = append(lines, row)
 	}
-	lines = append(lines, "", p.renderFooter(width, target, selected))
+	lines = append(lines, "", p.renderFooter(width, target, selected, cardWidth > 0))
 
 	// Home, then overwrite each line and clear its tail, then clear below: no
 	// full-screen wipe, so nothing flickers between keystrokes.
@@ -453,7 +454,7 @@ func (p *picker) renderCard(session *Session, target *Account, width, height int
 
 type hint struct{ key, label string }
 
-func (p *picker) renderFooter(width int, target *Account, selected *Session) string {
+func (p *picker) renderFooter(width int, target *Account, selected *Session, resizable bool) string {
 	enter := "open"
 	if target != nil {
 		label := AccountLabel(target.Tool, target)
@@ -475,6 +476,9 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session) str
 		yolo = "ask again"
 	}
 	hints = append(hints, hint{"^t", "target"}, hint{"^y", yolo}, hint{"esc", "quit"})
+	if resizable {
+		hints = append(hints, hint{"^←→", "resize"})
+	}
 
 	// Drop hints from the end until the row fits: the first ones say what
 	// Enter will do, which matters most.

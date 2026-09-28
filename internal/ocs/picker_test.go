@@ -1,6 +1,8 @@
 package ocs
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -123,7 +125,13 @@ func TestDecodeKeys(t *testing.T) {
 		"\x1b[5~":       {{Name: "pageup"}},
 		"\x1b[6~":       {{Name: "pagedown"}},
 		"\x1b[Z":        {{Name: "backtab"}},
-		"\x1b[1;5A":     {{Name: "up"}},
+		"\x1b[1;5A":     {{Name: "up", Ctrl: true}},
+		"\x1b[1;5C":     {{Name: "right", Ctrl: true}},
+		"\x1b[1;5D":     {{Name: "left", Ctrl: true}},
+		"\x1b[5C":       {{Name: "right"}},
+		"\x1b[1;3C":     {{Name: "right"}}, // Alt, not Ctrl
+		"\x1bOc":        {{Name: "right", Ctrl: true}},
+		"\x1bOd":        {{Name: "left", Ctrl: true}},
 		"\x14":          {{Name: "t", Ctrl: true}},
 		"\x19":          {{Name: "y", Ctrl: true}},
 		"\x7f":          {{Name: "backspace"}},
@@ -313,5 +321,88 @@ func TestRouteArrowOnlyWhenCrossing(t *testing.T) {
 	}
 	if !strings.Contains(badgeCell(&codex, &cc1, 0), "→") {
 		t.Fatal("a crossing row should show an arrow")
+	}
+}
+
+func cardWidth(t *testing.T, p *picker, cols int) int {
+	t.Helper()
+	lines := frameLines(t, p, cols, 30)
+	top := lines[2]
+	start := strings.Index(top, "╭")
+	if start < 0 {
+		return 0
+	}
+	return visibleWidth(top[start:])
+}
+
+func TestResizeMovesTheDivider(t *testing.T) {
+	p := newTestPicker([]Session{claudeTestSession()}, nil)
+	before := cardWidth(t, p, 120)
+
+	p.handle(Key{Name: "right", Ctrl: true})
+	narrower := cardWidth(t, p, 120)
+	if narrower >= before || !p.layoutChanged {
+		t.Fatalf("Ctrl+→ should widen the list: card %d -> %d", before, narrower)
+	}
+
+	p.handle(Key{Name: "left", Ctrl: true})
+	if back := cardWidth(t, p, 120); back != before {
+		t.Fatalf("Ctrl+← should undo Ctrl+→: card %d, want %d", back, before)
+	}
+}
+
+func TestResizeStopsAtBothEdges(t *testing.T) {
+	p := newTestPicker([]Session{claudeTestSession()}, nil)
+	cardWidth(t, p, 120)
+
+	for i := 0; i < 40; i++ {
+		p.handle(Key{Name: "right", Ctrl: true})
+	}
+	if got := cardWidth(t, p, 120); got < minCardCols {
+		t.Fatalf("card shrank to %d, below its minimum", got)
+	}
+	// Pressing the other way moves straight back rather than working off
+	// presses past the edge.
+	widest := p.layout.ListPercent
+	p.handle(Key{Name: "left", Ctrl: true})
+	if p.layout.ListPercent != widest-resizeStep {
+		t.Fatalf("percent %d after one step back from %d", p.layout.ListPercent, widest)
+	}
+
+	for i := 0; i < 40; i++ {
+		p.handle(Key{Name: "left", Ctrl: true})
+	}
+	lines := frameLines(t, p, 120, 30)
+	if list := strings.Index(lines[2], "╭"); list < 0 || visibleWidth(lines[2][:list]) < minListCols {
+		t.Fatalf("list shrank below its minimum: %q", lines[2])
+	}
+}
+
+func TestResizeIsANoOpWithoutTheCard(t *testing.T) {
+	p := newTestPicker([]Session{claudeTestSession()}, nil)
+	frameLines(t, p, 70, 30)
+	p.handle(Key{Name: "right", Ctrl: true})
+	if p.layoutChanged {
+		t.Fatal("resizing changed the layout while the card was hidden")
+	}
+	if strings.Contains(strings.Join(frameLines(t, p, 70, 30), ""), "resize") {
+		t.Fatal("the resize hint shows while there is nothing to resize")
+	}
+}
+
+func TestLayoutRoundTrips(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ocs", "layout.json")
+	if got := LoadLayout(path); got.ListPercent != 0 {
+		t.Fatalf("missing file gave %+v", got)
+	}
+	if err := SaveLayout(path, Layout{ListPercent: 60}); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadLayout(path); got.ListPercent != 60 {
+		t.Fatalf("got %+v", got)
+	}
+	os.WriteFile(path, []byte(`{"listPercent": 400}`), 0o644)
+	if got := LoadLayout(path); got.ListPercent != 90 {
+		t.Fatalf("an out-of-range value was not clamped: %+v", got)
 	}
 }

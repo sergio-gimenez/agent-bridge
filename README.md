@@ -69,6 +69,7 @@ in [`demo/README.md`](demo/README.md).
 | `Shift+Tab` | Cycle the target backwards |
 | `Tab` | Open in the *next tool* right away, as a transcript-seeded fork |
 | `Ctrl+Y` | Toggle yolo: bypass permission checks for this launch only |
+| `Ctrl+←` `Ctrl+→` | Move the divider between the list and the card; the width is remembered |
 | `Esc` `Ctrl+C` | Cancel |
 
 ## Reading the list
@@ -91,6 +92,12 @@ to. Cycling pins a destination: the header shows `target CX2`, crossing rows get
 an arrow, and the card spells out where `Enter` will open the session. The
 footer always says what `Enter` and `Tab` will do, and a red `YOLO` in the
 header means the launch will skip permission checks.
+
+`Ctrl+←` and `Ctrl+→` move the divider between the list and the card, and the
+next launch opens with the same split. On macOS those keys switch Spaces by
+default; free them under System Settings → Keyboard → Keyboard Shortcuts →
+Mission Control if you want them in the terminal. Below 90 columns the card is
+hidden and the list takes the whole width.
 
 ## Forking a session
 
@@ -321,6 +328,7 @@ would run CODEX_HOME=~/.codex-cx1 codex <transcript seed, 1655 chars>
 | Codex | `~/.codex/sessions/**/rollout-*.jsonl`, plus each account's `codexHome` | `CODEX_HOME`, `CODEX_SESSIONS_PATH` |
 | `ocs` config | `~/.config/ocs/config.json` | `OCS_CONFIG_PATH` |
 | `ocs` cache | `~/.cache/ocs/index.gob` | `OCS_CACHE_PATH`, `XDG_CACHE_HOME` |
+| Picker layout | `~/.cache/ocs/layout.json`, beside the cache | follows the cache |
 
 `ocs` skips a store that's missing or unreadable instead of dying on it, so not
 having OpenCode installed still gets you your Claude and Codex sessions.
