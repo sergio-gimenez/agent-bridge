@@ -1,6 +1,41 @@
 package ocs
 
-import "unicode/utf8"
+import (
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+)
+
+// escapeWait is how long a trailing ESC waits for the rest of its sequence
+// before it counts as the Escape key.
+const escapeWait = 40 * time.Millisecond
+
+// incompleteEscape returns where a trailing, unfinished escape sequence starts
+// in data, or -1 when data ends cleanly.
+func incompleteEscape(data []byte) int {
+	for i := len(data) - 1; i >= 0 && i >= len(data)-16; i-- {
+		if data[i] != 0x1b {
+			continue
+		}
+		rest := data[i+1:]
+		switch {
+		case len(rest) == 0:
+			return i
+		case rest[0] == 'O' && len(rest) == 1:
+			return i
+		case rest[0] == '[':
+			for _, b := range rest[1:] {
+				if b >= 0x40 && b <= 0x7e {
+					return -1
+				}
+			}
+			return i
+		}
+		return -1
+	}
+	return -1
+}
 
 // Key is one decoded keypress: a named key, possibly with Ctrl held, or text to
 // append to the query.
@@ -18,6 +53,25 @@ var csiNames = map[string]string{
 }
 
 var ss3Names = map[byte]string{'A': "up", 'B': "down", 'C': "right", 'D': "left", 'H': "home", 'F': "end"}
+
+// rxvt spells Ctrl+arrow as SS3 with a lowercase final byte.
+var rxvtCtrlNames = map[byte]string{'a': "up", 'b': "down", 'c': "right", 'd': "left"}
+
+// csiModifier reads the modifier parameter of a CSI sequence such as "1;5C",
+// minus one, so the result is a bitmask: 1 Shift, 2 Alt, 4 Ctrl. It is 0 when
+// the sequence carries none.
+func csiModifier(body string) int {
+	params := body[:len(body)-1]
+	semicolon := strings.LastIndexByte(params, ';')
+	if semicolon < 0 {
+		return 0
+	}
+	value, err := strconv.Atoi(params[semicolon+1:])
+	if err != nil || value < 1 {
+		return 0
+	}
+	return value - 1
+}
 
 // DecodeKeys splits one read from the terminal into keypresses. A terminal
 // writes an escape sequence in one go, so a lone ESC at the end of a read is
@@ -46,21 +100,26 @@ func DecodeKeys(input []byte) []Key {
 				}
 				body := string(input[i+2 : j+1])
 				name, ok := csiNames[body]
+				ctrl := false
 				if !ok {
-					// Modified keys ("1;5A") keep their final byte's meaning.
+					// Modified keys ("1;5C") keep their final byte's meaning;
+					// the number after ";" is 1 plus a bitmask where 4 is Ctrl.
 					name = csiNames[string(input[j])]
 					if input[j] == '~' {
 						name = ""
 					}
+					ctrl = csiModifier(body)&4 != 0
 				}
 				if name != "" {
-					keys = append(keys, Key{Name: name})
+					keys = append(keys, Key{Name: name, Ctrl: ctrl})
 				}
 				i = j + 1
 			case 'O':
 				if i+2 < len(input) {
 					if name, ok := ss3Names[input[i+2]]; ok {
 						keys = append(keys, Key{Name: name})
+					} else if name, ok := rxvtCtrlNames[input[i+2]]; ok {
+						keys = append(keys, Key{Name: name, Ctrl: true})
 					}
 				}
 				i += 3

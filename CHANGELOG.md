@@ -8,6 +8,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A cleaner picker.** One line per session (source, title, project, age like
+  `12m` or `3d`) instead of four, so about three times as many fit on screen,
+  and the list scrolls with the selection instead of paging. The selected
+  session sits in a rounded card with its prompts and replies wrapped in
+  conversation order. One footer line says what each key will do. A pinned
+  target shows as an arrow in the target tool's colour instead of a
+  `[CC1→CX2]` badge on every row. Wide characters such as emoji and CJK no
+  longer throw the columns out of line.
+- `Ctrl+←` / `Ctrl+→` resize the list against the card, and the split is
+  remembered in `~/.cache/ocs/layout.json`.
+- A split escape sequence (an arrow key arriving in two reads over a slow SSH
+  link) no longer cancels the picker as if Escape had been pressed.
 - **Rewritten in Go.** `ocs` is now a single static binary with no Node
   runtime, and the picker is up in a few tens of milliseconds instead of
   seconds. Output, keys, flags and config are unchanged.
