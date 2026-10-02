@@ -109,3 +109,51 @@ if [ "${#diagram_tips[@]}" -gt 0 ]; then
   printf 'ocs can still draw one. https://github.com/veelenga/claude-mermaid\n'
   printf '%s\n' "${diagram_tips[@]}"
 fi
+
+# Excalidraw is the editable counterpart: a live canvas the agent can draw on,
+# screenshot and export. Also one stdio binary shared by all three tools.
+EXCALIDRAW_BIN="$(command -v mcp-excalidraw-server || true)"
+canvas_tips=()
+
+if [ -z "${EXCALIDRAW_BIN}" ]; then
+  canvas_tips+=(
+    ""
+    "  Install the server once:"
+    "    npm install -g mcp-excalidraw-server"
+  )
+  EXCALIDRAW_BIN="mcp-excalidraw-server"
+fi
+
+if has_tool claude "${CLAUDE_DIR}" \
+  && ! grep -qs 'mcp-excalidraw-server' "${HOME}/.claude.json"; then
+  canvas_tips+=(
+    ""
+    "  Claude Code:"
+    "    claude mcp add --scope user excalidraw -- ${EXCALIDRAW_BIN}"
+  )
+fi
+
+if has_tool opencode "${OPENCODE_CONFIG_DIR}" \
+  && ! grep -qs 'mcp-excalidraw-server' "${OPENCODE_CONFIG_DIR}"/opencode.json*; then
+  canvas_tips+=(
+    ""
+    "  OpenCode: add the server to ${OPENCODE_CONFIG_DIR}/opencode.json"
+    "    \"mcp\": { \"excalidraw\": { \"type\": \"local\","
+    "                    \"command\": [\"${EXCALIDRAW_BIN}\"], \"enabled\": true } }"
+  )
+fi
+
+if has_tool codex "${CODEX_DIR}" \
+  && ! grep -qs 'mcp-excalidraw-server' "${CODEX_DIR}/config.toml"; then
+  canvas_tips+=(
+    ""
+    "  Codex:"
+    "    codex mcp add excalidraw -- ${EXCALIDRAW_BIN}"
+  )
+fi
+
+if [ "${#canvas_tips[@]}" -gt 0 ]; then
+  printf '\nTip: give every tool the same live Excalidraw canvas, so a session you\n'
+  printf 'move with ocs can keep editing its diagram. https://github.com/yctimlin/mcp_excalidraw\n'
+  printf '%s\n' "${canvas_tips[@]}"
+fi
