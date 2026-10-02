@@ -185,6 +185,28 @@ Code, but the file drops into `~/.codex/skills/` and
 which names Claude Code's tool ids. The preview opens a local browser tab, so it
 is only useful for sessions running on your own machine.
 
+For diagrams the agent should keep editing, [`mcp-excalidraw-server`](https://github.com/yctimlin/mcp_excalidraw)
+gives every tool the same live Excalidraw canvas. The agent can draw on it, take
+a screenshot, fix what it sees and export a `.excalidraw` file. It is again one
+stdio binary, and it starts the canvas on `127.0.0.1:3000` by itself.
+
+```bash
+npm install -g mcp-excalidraw-server
+```
+
+- **Claude Code:** `claude mcp add --scope user excalidraw -- mcp-excalidraw-server`
+- **OpenCode:** `"excalidraw": { "type": "local", "command": ["mcp-excalidraw-server"], "enabled": true }`
+  under `"mcp"` in `opencode.json`.
+- **Codex:** `codex mcp add excalidraw -- mcp-excalidraw-server`
+
+Its skill has no tool ids in it, so one command installs it for each tool:
+
+```bash
+for root in ~/.claude/skills ~/.codex/skills ~/.config/opencode/skill; do
+  mcp-excalidraw-server install-skill --dir "$root"
+done
+```
+
 ## Multiple accounts
 
 Claude Code and Codex each keep credentials, config and session history under a
