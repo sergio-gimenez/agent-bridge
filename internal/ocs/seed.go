@@ -11,79 +11,48 @@ import (
 	"strings"
 )
 
-// Full transcript, with guards so a huge session doesn't blow the prompt:
-// truncate each turn, then keep the most recent turns within a char budget.
-const (
-	maxTurnChars       = 4000
-	maxTranscriptChars = 60000
-)
-
 type SessionSeed struct {
-	Directory string
-	Prompt    string
+	Directory      string
+	Prompt         string
+	TranscriptPath string
 }
 
-func lastTurn(turns []Turn, role Role) string {
-	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Role == role {
-			return turns[i].Text
+// Seeding keeps prose formatting intact; the search readers deliberately
+// collapse whitespace instead. Tool calls and attachments remain in the raw
+// source, referenced from the readable handoff transcript.
+func transcriptText(raw json.RawMessage, textTypes map[string]bool) string {
+	if value, ok := rawString(bytes.TrimSpace(raw)); ok {
+		return value
+	}
+	var parts []*contentPart
+	if json.Unmarshal(raw, &parts) != nil {
+		return ""
+	}
+	var texts []string
+	for _, part := range parts {
+		if part != nil && textTypes[part.Type] {
+			if value, ok := rawString(part.Text); ok {
+				texts = append(texts, value)
+			}
 		}
 	}
-	return ""
+	return strings.Join(texts, "\n\n")
 }
 
-func renderTranscript(turns []Turn) string {
-	rendered := make([]string, len(turns))
-	for i, turn := range turns {
-		label := "ASSISTANT"
-		if turn.Role == RoleUser {
-			label = "USER"
-		}
-		rendered[i] = label + ": " + Truncate(turn.Text, maxTurnChars)
-	}
-
-	// Keep the most recent turns that fit the budget; drop the oldest if over.
-	var kept []string
-	total := 0
-	dropped := false
-	for i := len(rendered) - 1; i >= 0; i-- {
-		line := rendered[i]
-		size := len([]rune(line))
-		if len(kept) > 0 && total+size > maxTranscriptChars {
-			dropped = true
-			break
-		}
-		kept = append([]string{line}, kept...)
-		total += size
-	}
-
-	if dropped {
-		kept = append([]string{"[... earlier turns omitted for length ...]"}, kept...)
-	}
-	if len(kept) == 0 {
-		return "(no transcript found)"
-	}
-	return strings.Join(kept, "\n\n")
+type sessionTranscript struct {
+	Directory    string
+	Turns        []Turn
+	Summary      string
+	SummaryAfter int // number of conversation turns preceding the saved summary
+	SourcePath   string
+	Export       []byte // OpenCode has no JSONL file; preserve its complete export.
 }
 
-func BuildContinuationPrompt(session Session, turns []Turn) string {
-	lines := []string{
-		fmt.Sprintf("Continue a prior %s conversation in a new clean session.", ToolName(session.Source)),
-		"",
-		"Original session: " + session.ID,
-		"Original title: " + session.Title,
-		"Original directory: " + session.Directory,
-		"",
-		"You are resuming this conversation in a fresh session. The full transcript",
-		"is below. Reply directly to the latest user message first; do not restart the",
-		"conversation from scratch. If some context looks incomplete, say so briefly and",
-		"then continue with the most recent thread.",
+func (transcript *sessionTranscript) saveSummary(text string) {
+	if strings.TrimSpace(text) != "" {
+		transcript.Summary = text
+		transcript.SummaryAfter = len(transcript.Turns)
 	}
-	if last := lastTurn(turns, RoleUser); last != "" {
-		lines = append(lines, "", "Latest user message: "+Truncate(last, 320))
-	}
-	lines = append(lines, "", "=== TRANSCRIPT ===", renderTranscript(turns), "=== END TRANSCRIPT ===")
-	return strings.Join(lines, "\n")
 }
 
 // --- OpenCode transcript (via `opencode export`) -------------------------
@@ -94,7 +63,9 @@ type exportedSession struct {
 	} `json:"info"`
 	Messages []struct {
 		Info *struct {
-			Role string `json:"role"`
+			Role    string          `json:"role"`
+			Summary bool            `json:"summary"`
+			Error   json.RawMessage `json:"error"`
 		} `json:"info"`
 		Parts []struct {
 			Type string `json:"type"`
@@ -105,24 +76,15 @@ type exportedSession struct {
 
 var exportBanner = regexp.MustCompile(`^Exporting session:.*\n`)
 
-func opencodeTranscript(id string) (string, []Turn, error) {
-	var stdout bytes.Buffer
-	command := exec.Command("opencode", "export", id)
-	command.Stdout = &stdout
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		return "", nil, fmt.Errorf("Failed to export OpenCode session %s.", id)
-	}
-
+func parseOpencodeTranscript(raw []byte) (sessionTranscript, error) {
 	var exported exportedSession
-	if err := json.Unmarshal(exportBanner.ReplaceAll(stdout.Bytes(), nil), &exported); err != nil {
-		return "", nil, fmt.Errorf("Could not read the export of OpenCode session %s: %w", id, err)
+	if err := json.Unmarshal(raw, &exported); err != nil {
+		return sessionTranscript{}, err
 	}
 	if exported.Info == nil || exported.Info.Directory == "" {
-		return "", nil, fmt.Errorf("Exported OpenCode session has no directory.")
+		return sessionTranscript{}, fmt.Errorf("Exported OpenCode session has no directory.")
 	}
-
-	var turns []Turn
+	transcript := sessionTranscript{Directory: exported.Info.Directory, Export: raw}
 	for _, message := range exported.Messages {
 		if message.Info == nil || (message.Info.Role != "user" && message.Info.Role != "assistant") {
 			continue
@@ -133,11 +95,34 @@ func opencodeTranscript(id string) (string, []Turn, error) {
 				texts = append(texts, part.Text)
 			}
 		}
-		if text := CollapseWhitespace(joinSpace(texts)); text != "" {
-			turns = append(turns, Turn{Role: Role(message.Info.Role), Text: text})
+		text := strings.Join(texts, "\n\n")
+		if strings.TrimSpace(text) == "" {
+			continue
 		}
+		if message.Info.Summary {
+			if len(message.Info.Error) == 0 || string(message.Info.Error) == "null" {
+				transcript.saveSummary(text)
+			}
+			continue
+		}
+		transcript.Turns = append(transcript.Turns, Turn{Role: Role(message.Info.Role), Text: text})
 	}
-	return exported.Info.Directory, turns, nil
+	return transcript, nil
+}
+
+func opencodeTranscript(id string) (sessionTranscript, error) {
+	var stdout bytes.Buffer
+	command := exec.Command("opencode", "export", id)
+	command.Stdout = &stdout
+	command.Stderr = os.Stderr
+	if err := command.Run(); err != nil {
+		return sessionTranscript{}, fmt.Errorf("Failed to export OpenCode session %s.", id)
+	}
+	transcript, err := parseOpencodeTranscript(exportBanner.ReplaceAll(stdout.Bytes(), nil))
+	if err != nil {
+		return sessionTranscript{}, fmt.Errorf("Could not read the export of OpenCode session %s: %w", id, err)
+	}
+	return transcript, nil
 }
 
 // --- Claude Code transcript (parse the session JSONL) --------------------
@@ -148,8 +133,6 @@ func fileExists(path string) bool {
 }
 
 func findClaudeFile(session Session) string {
-	// The reader records where it found the transcript; the scan below is the
-	// fallback for sessions built without one.
 	if session.FilePath != "" && fileExists(session.FilePath) {
 		return session.FilePath
 	}
@@ -167,54 +150,50 @@ func findClaudeFile(session Session) string {
 	return ""
 }
 
-func claudeTranscript(session Session) (string, []Turn, error) {
+func claudeTranscript(session Session) (sessionTranscript, error) {
 	path := findClaudeFile(session)
 	if path == "" {
-		return "", nil, fmt.Errorf("Could not find Claude session %s.", session.ID)
+		return sessionTranscript{}, fmt.Errorf("Could not find Claude session %s.", session.ID)
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return "", nil, err
+		return sessionTranscript{}, err
 	}
 	defer file.Close()
-
-	directory := ""
-	var turns []Turn
+	transcript := sessionTranscript{SourcePath: path}
 	err = eachLine(file, func(line []byte) {
-		var entry claudeLine
+		var entry struct {
+			claudeLine
+			IsCompactSummary bool `json:"isCompactSummary"`
+		}
 		if json.Unmarshal(line, &entry) != nil {
 			return
 		}
-		if directory == "" {
+		if transcript.Directory == "" {
 			if cwd, ok := rawString(entry.Cwd); ok {
-				directory = cwd
+				transcript.Directory = cwd
 			}
 		}
 		if entry.Message == nil {
 			return
 		}
+		text := transcriptText(entry.Message.Content, claudeTextTypes)
+		if entry.IsCompactSummary {
+			transcript.saveSummary(text)
+			return
+		}
 		switch entry.Type {
 		case "user":
-			if isToolResultOnly(entry.Message.Content) {
-				return
-			}
-			text := extractText(entry.Message.Content, claudeTextTypes)
-			if text != "" && !strings.HasPrefix(text, "<") && !strings.HasPrefix(text, "Caveat:") {
-				turns = append(turns, Turn{Role: RoleUser, Text: text})
+			if !isToolResultOnly(entry.Message.Content) && strings.TrimSpace(text) != "" && !isClaudeNoise(strings.TrimSpace(text)) {
+				transcript.Turns = append(transcript.Turns, Turn{RoleUser, text})
 			}
 		case "assistant":
-			if text := extractText(entry.Message.Content, claudeTextTypes); text != "" {
-				turns = append(turns, Turn{Role: RoleAssistant, Text: text})
+			if strings.TrimSpace(text) != "" {
+				transcript.Turns = append(transcript.Turns, Turn{RoleAssistant, text})
 			}
 		}
 	})
-	if err != nil {
-		return "", nil, err
-	}
-	if directory == "" {
-		directory, _ = os.Getwd()
-	}
-	return directory, turns, nil
+	return transcript, err
 }
 
 // --- Codex transcript (parse the session rollout JSONL) ------------------
@@ -223,8 +202,6 @@ func findCodexFile(session Session) string {
 	if session.FilePath != "" && fileExists(session.FilePath) {
 		return session.FilePath
 	}
-	// Rollouts are filed by date, so without a recorded path the only way back
-	// to one is to walk the tree looking for the id in the file name.
 	for _, file := range listCodexFiles(codexSessionsPath(session.Account)) {
 		if strings.Contains(filepath.Base(file.Path), session.ID) {
 			return file.Path
@@ -233,48 +210,108 @@ func findCodexFile(session Session) string {
 	return ""
 }
 
-func codexTranscript(session Session) (string, []Turn, error) {
+func codexTranscript(session Session) (sessionTranscript, error) {
 	path := findCodexFile(session)
 	if path == "" {
-		return "", nil, fmt.Errorf("Could not find Codex session %s.", session.ID)
+		return sessionTranscript{}, fmt.Errorf("Could not find Codex session %s.", session.ID)
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return "", nil, err
+		return sessionTranscript{}, err
 	}
 	defer file.Close()
-
-	parsed, err := parseRollout(file)
-	if err != nil {
-		return "", nil, err
+	transcript := sessionTranscript{SourcePath: path}
+	var items, events []Turn
+	var summaryAfterItems, summaryAfterEvents int
+	appendTurn := func(into *[]Turn, role, text string) {
+		if (role == "user" || role == "assistant") && strings.TrimSpace(text) != "" &&
+			(role != "user" || !isCodexNoise(strings.TrimSpace(text))) {
+			*into = append(*into, Turn{Role(role), text})
+		}
 	}
-	directory := parsed.Directory
-	if directory == "" {
-		directory, _ = os.Getwd()
+	err = eachLine(file, func(line []byte) {
+		var entry rolloutLine
+		if json.Unmarshal(line, &entry) != nil {
+			return
+		}
+		payload := entry.Payload
+		if payload == nil {
+			payload = &rolloutItem{}
+		}
+		if transcript.Directory == "" {
+			if cwd, ok := rawString(firstPresent(payload.Cwd, entry.Cwd)); ok {
+				transcript.Directory = cwd
+			}
+		}
+		if entry.Type == "compacted" {
+			if text, ok := rawString(firstPresent(payload.Message, entry.Message)); ok && strings.TrimSpace(text) != "" {
+				transcript.Summary = text
+				summaryAfterItems, summaryAfterEvents = len(items), len(events)
+			}
+			return
+		}
+		if entry.Type == "event_msg" {
+			if len(items) == 0 {
+				role := ""
+				if payload.Type == "user_message" {
+					role = "user"
+				} else if payload.Type == "agent_message" {
+					role = "assistant"
+				}
+				appendTurn(&events, role, transcriptText(payload.Message, codexTextTypes))
+			}
+			return
+		}
+		item := &entry.rolloutItem
+		if entry.Type == "response_item" {
+			item = payload
+		}
+		if item.Type == "message" {
+			appendTurn(&items, item.Role, transcriptText(item.Content, codexTextTypes))
+			if len(items) > 0 {
+				events = nil
+			}
+		}
+	})
+	transcript.Turns, transcript.SummaryAfter = items, summaryAfterItems
+	if len(items) == 0 {
+		transcript.Turns, transcript.SummaryAfter = events, summaryAfterEvents
 	}
-	return directory, parsed.Turns, nil
+	return transcript, err
 }
 
-// BuildSessionSeed turns a session into a fresh session's opening prompt, for
-// routes that cross a tool or an account.
+// BuildSessionSeed writes a recoverable handoff before launching the target.
 func BuildSessionSeed(session Session) (SessionSeed, error) {
-	var (
-		directory string
-		turns     []Turn
-		err       error
-	)
+	var transcript sessionTranscript
+	var err error
 	switch session.Source {
 	case SourceClaude:
-		directory, turns, err = claudeTranscript(session)
+		transcript, err = claudeTranscript(session)
 	case SourceCodex:
-		directory, turns, err = codexTranscript(session)
+		transcript, err = codexTranscript(session)
 	default:
-		directory, turns, err = opencodeTranscript(session.ID)
+		transcript, err = opencodeTranscript(session.ID)
 	}
 	if err != nil {
 		return SessionSeed{}, err
 	}
-
-	session.Directory = directory
-	return SessionSeed{Directory: directory, Prompt: BuildContinuationPrompt(session, turns)}, nil
+	if transcript.Directory == "" {
+		transcript.Directory = session.Directory
+		if transcript.Directory == "" || transcript.Directory == "unknown" {
+			transcript.Directory, err = os.Getwd()
+			if err != nil {
+				return SessionSeed{}, err
+			}
+		}
+	}
+	session.Directory = transcript.Directory
+	path, err := saveHandoffTranscript(session, &transcript)
+	if err != nil {
+		return SessionSeed{}, fmt.Errorf("Could not save the handoff transcript: %w", err)
+	}
+	return SessionSeed{
+		Directory:      transcript.Directory,
+		Prompt:         continuationPrompt(session, transcript, path),
+		TranscriptPath: path,
+	}, nil
 }

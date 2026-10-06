@@ -83,6 +83,9 @@ func (cache *Cache) last() *cacheData {
 }
 
 func CachePath() string {
+	if path := os.Getenv("AGB_CACHE_PATH"); path != "" {
+		return path
+	}
 	if path := os.Getenv("OCS_CACHE_PATH"); path != "" {
 		return path
 	}
@@ -90,7 +93,10 @@ func CachePath() string {
 	if err != nil {
 		dir = filepath.Join(homeDir(), ".cache")
 	}
-	return filepath.Join(dir, "ocs", "index.gob")
+	return preferredPath(
+		filepath.Join(dir, "agentbridge", "index.gob"),
+		filepath.Join(dir, "ocs", "index.gob"),
+	)
 }
 
 func emptyCacheData() cacheData {

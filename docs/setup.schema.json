@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentBridge configuration with shared agent setup",
+  "type": "object",
+  "properties": {
+    "setup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "profiles"],
+      "properties": {
+        "version": { "const": 1 },
+        "destinations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mcpConfig": { "type": "string", "minLength": 1 },
+              "skillsDir": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "profiles": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["targets"],
+            "properties": {
+              "targets": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+              "skills": { "$ref": "#/$defs/skills" },
+              "mcps": { "$ref": "#/$defs/mcps" },
+              "overrides": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "skills": { "$ref": "#/$defs/skills" },
+                    "mcps": { "$ref": "#/$defs/mcps" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "skills": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "enabled": { "type": "boolean" }
+        }
+      }
+    },
+    "mcps": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transport": { "enum": ["http", "stdio"] },
+          "url": { "type": "string", "format": "uri" },
+          "command": { "type": "string", "minLength": 1 },
+          "args": { "type": "array", "items": { "type": "string" } },
+          "envVars": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" } },
+          "bearerTokenEnv": { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" },
+          "enabled": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
-// Command ocs is one picker for every OpenCode, Claude Code and Codex session
-// on the machine.
+// Command agb is AgentBridge: one picker and shared setup for OpenCode,
+// Claude Code and Codex on the machine.
 package main
 
 import (
@@ -33,6 +33,12 @@ func resolveTarget(config ocs.Config, requested string) (*ocs.Account, error) {
 }
 
 func run() (int, error) {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "setup", "plan", "sync":
+			return ocs.RunSetupCommand(os.Args[1], os.Args[2:], os.Stdout)
+		}
+	}
 	args := ocs.ParseArgs(os.Args[1:])
 	if args.Help {
 		ocs.PrintHelp(os.Stdout)
@@ -65,7 +71,7 @@ func run() (int, error) {
 		ocs.PrintSessions(out, sessions[:limit])
 		err := out.Flush()
 		<-saved
-		// `ocs --print | head` closes the pipe early; that is the caller
+		// `agb --print | head` closes the pipe early; that is the caller
 		// getting what they asked for, not a failure.
 		if errors.Is(err, syscall.EPIPE) {
 			return 0, nil

@@ -1,6 +1,6 @@
 # Using multiple Claude Code accounts
 
-`ocs` can index and launch sessions from multiple Claude Code subscriptions.
+`agb` can index and launch sessions from multiple Claude Code subscriptions.
 Each account keeps separate authentication, settings, and session storage while
 all accounts can work in the same project directories.
 
@@ -8,9 +8,9 @@ all accounts can work in the same project directories.
 
 - Two or more Claude subscriptions, each using a different Claude account
 - Claude Code installed and available as `claude`
-- `ocs` installed from this repository
+- `agb` installed from this repository
 
-Install `ocs` locally when needed:
+Install `agb` locally when needed:
 
 ```bash
 make install
@@ -107,9 +107,9 @@ cc2 auth status
 Each command should report `"loggedIn": true` and the expected account. The two
 config homes do not share credentials.
 
-## 3. Configure `ocs`
+## 3. Configure `agb`
 
-Create `~/.config/ocs/config.json`:
+Create `~/.config/agentbridge/config.json`:
 
 ```json
 {
@@ -139,7 +139,7 @@ cycled. It does not change which account owns existing sessions.
 Start normally:
 
 ```bash
-ocs
+agb
 ```
 
 Picker controls:
@@ -161,23 +161,23 @@ routes to `[CC2→CC1]`.
 Set the initial target from the command line:
 
 ```bash
-ocs --claude-account cc2    # or --target cc2
+agb --claude-account cc2    # or --target cc2
 ```
 
 ### Continue an old CC1 session with CC2
 
-1. Run `ocs --claude-account cc2`.
+1. Run `agb --claude-account cc2`.
 2. Select the old `[CC1]` session.
 3. Confirm the picker says `Target: CC2` and the badge reads `[CC1→CC2]`.
 4. Press `Enter`.
 
-`ocs` reads the CC1 transcript and starts a fresh CC2 session with that context.
+`agb` reads the CC1 transcript and starts a fresh CC2 session with that context.
 The original CC1 session remains unchanged. Once Claude Code persists the new
-session, it appears in `ocs` with a `[CC2]` badge.
+session, it appears in `agb` with a `[CC2]` badge.
 
 ## Resume and fork behavior
 
-Claude session IDs belong to the config home that created them. `ocs` therefore
+Claude session IDs belong to the config home that created them. `agb` therefore
 uses two different paths:
 
 - Same account: launch `claude --resume` with the owning account's environment.
@@ -225,17 +225,17 @@ second `configDir` matches the value used by the `cc2` wrapper.
 
 ### Old sessions disappear
 
-Keep the first account entry without `configDir`. This lets `ocs` continue
+Keep the first account entry without `configDir`. This lets `agb` continue
 scanning `~/.claude/projects`, where existing default-account sessions live.
 
 ### A session resumes in the wrong account
 
 Do not move session JSONL files between config homes. Keep account definitions
-stable after sessions exist; `ocs` records ownership from the directory it
+stable after sessions exist; `agb` records ownership from the directory it
 scanned.
 
 ### Protect credentials
 
 Do not copy or commit `.credentials.json` from any Claude config directory. The
-`ocs` config contains directory locations only and does not need tokens or
+`agb` config contains directory locations only and does not need tokens or
 passwords.

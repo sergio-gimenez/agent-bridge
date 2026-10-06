@@ -1,7 +1,7 @@
 .PHONY: build test vet install demo demo-fixture demo-record demo-gif clean
 
 build:
-	CGO_ENABLED=0 go build -o bin/ocs ./cmd/ocs
+	CGO_ENABLED=0 go build -o bin/agb ./cmd/agb
 
 test:
 	go test ./...
@@ -10,7 +10,7 @@ vet:
 	go vet ./...
 	@test -z "$$(gofmt -l .)" || { gofmt -l .; echo "gofmt needed"; exit 1; }
 
-# Puts `ocs` in ~/.local/bin, no root needed.
+# Puts `agb` in ~/.local/bin and removes obsolete command names.
 install:
 	bash ./scripts/install-local.sh
 

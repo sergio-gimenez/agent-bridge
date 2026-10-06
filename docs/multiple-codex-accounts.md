@@ -1,6 +1,6 @@
 # Using multiple Codex accounts
 
-`ocs` can index and launch sessions from multiple Codex accounts. The mechanism
+`agb` can index and launch sessions from multiple Codex accounts. The mechanism
 is the same one described in
 [Using multiple Claude Code accounts](multiple-claude-accounts.md), namely an
 isolated home directory per account, so this page covers only what differs for
@@ -10,7 +10,7 @@ Codex.
 
 - Two or more accounts you can sign into with `codex login`
 - Codex installed and available as `codex`
-- `ocs` installed from this repository
+- `agb` installed from this repository
 
 ## How isolation works
 
@@ -46,9 +46,9 @@ cx2 login
 Run each login separately and pick the corresponding account in the browser.
 Verify with `cx1 login status` and `cx2 login status`.
 
-## 3. Tell `ocs` about the accounts
+## 3. Tell `agb` about the accounts
 
-In `~/.config/ocs/config.json`:
+In `~/.config/agentbridge/config.json`:
 
 ```json
 {
@@ -76,12 +76,12 @@ target list covering OpenCode, every Claude account and every Codex account, and
 `Enter` follows whatever route the badge shows.
 
 ```bash
-ocs --codex-account cx2    # or --target cx2
+agb --codex-account cx2    # or --target cx2
 ```
 
 ## Resume and fork behavior
 
-Codex session ids belong to the home that created them, so `ocs` uses two paths:
+Codex session ids belong to the home that created them, so `agb` uses two paths:
 
 - Same account: `codex resume <id>` with the owning account's environment, or
   `codex fork <id>` for `Ctrl+F`, which branches natively.
@@ -90,14 +90,14 @@ Codex session ids belong to the home that created them, so `ocs` uses two paths:
 
 ## Differences worth knowing
 
-- **Titles.** Codex does not record a title in the rollout, so `ocs` titles a
+- **Titles.** Codex does not record a title in the rollout, so `agb` titles a
   Codex row with its opening prompt. Claude and OpenCode rows use the title
   their tool stored.
 - **Archiving.** Codex archives a session by moving its rollout to
-  `archived_sessions/`. `ocs` reads only `sessions/`, so archived Codex sessions
+  `archived_sessions/`. `agb` reads only `sessions/`, so archived Codex sessions
   drop out of the list.
 - **Setup context.** Codex opens a session by feeding itself the environment
-  block and any `AGENTS.md` as user turns. `ocs` filters those out, so they
+  block and any `AGENTS.md` as user turns. `agb` filters those out, so they
   never become a title or match a search for something you typed.
 
 ## Troubleshooting
@@ -114,5 +114,5 @@ Check both with `cx1 login status` and `cx2 login status`, and confirm the
 
 ### Protect credentials
 
-Do not copy or commit `auth.json` from any Codex home. The `ocs` config holds
+Do not copy or commit `auth.json` from any Codex home. The `agb` config holds
 directory locations only.

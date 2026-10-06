@@ -51,4 +51,4 @@ jobs:
       - name: Build fixture and list sessions
         run: |
           make build demo-fixture
-          HOME="$PWD/demo/.fixture/home" OCS_DRY_RUN=1 ./bin/ocs --print
+          HOME="$PWD/demo/.fixture/home" AGB_DRY_RUN=1 ./bin/agb --print

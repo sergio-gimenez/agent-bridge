@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in ocs does not work the way it should
+description: Something in AgentBridge does not work the way it should
 labels: [bug]
 body:
   - type: textarea
@@ -30,14 +30,14 @@ body:
     attributes:
       label: Dry-run output
       description: >
-        For anything about opening a session, run `OCS_DRY_RUN=1 ocs` and paste
+        For anything about opening a session, run `AGB_DRY_RUN=1 agb` and paste
         the "would run" line. Nothing is launched in dry-run mode.
       render: shell
 
   - type: input
     id: version
     attributes:
-      label: ocs version or commit
+      label: AgentBridge version or commit
     validations:
       required: true
 

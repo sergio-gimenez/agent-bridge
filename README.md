@@ -1,8 +1,8 @@
-<h1 align="center">ocs</h1>
+<h1 align="center">AgentBridge</h1>
 
 <p align="center">
-  <b>One picker for every OpenCode, Claude Code and Codex session on your machine.</b><br>
-  Search every project and account, jump back in, or carry the conversation into another tool.
+  <b>Your sessions and shared agent setup, in one place.</b><br>
+  Search every OpenCode, Claude Code and Codex account, carry conversations across tools, and synchronize skills and MCPs.
 </p>
 
 <p align="center">
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="ocs filtering OpenCode, Claude Code and Codex sessions in one list, then routing a Claude session into Codex" width="100%">
+  <img src="docs/demo.gif" alt="agb filtering OpenCode, Claude Code and Codex sessions in one list, then routing a Claude session into Codex" width="100%">
 </p>
 
 <p align="center"><sub>The demo runs against synthetic sessions; see <a href="demo/README.md">demo/</a>.</sub></p>
@@ -25,8 +25,14 @@ Finding the session where you actually solved something means remembering which
 tool you were in, `cd`-ing to the right repo, then paging through a separate
 resume list for every tool and every account.
 
-`ocs` reads those stores directly and puts everything in one list, newest first,
-searchable by the words you typed rather than only the title a tool gave it.
+AgentBridge (`agb`) reads those stores directly and puts everything in one
+list, newest first, searchable by the words you typed rather than only the
+title a tool gave it.
+
+`agb` also shares local skills and MCP definitions across tools and accounts
+through user-defined profiles. Start with `agb setup --example`, review with
+`agb plan`, and apply with `agb sync`. See [sharing agent setup](docs/setup.md)
+and the [broader product design](docs/shared-agent-setup.md).
 
 ## Install
 
@@ -36,14 +42,18 @@ The result is a single static binary with no runtime to install.
 ```bash
 git clone https://github.com/sergio-gimenez/opencode-sessions.git
 cd opencode-sessions
-make install              # puts `ocs` in ~/.local/bin, no root needed
+make install              # puts `agb` in ~/.local/bin, no root needed
 ```
 
 Then:
 
 ```bash
-ocs
+agb
 ```
+
+Upgrades use `~/.config/agentbridge`, `~/.cache/agentbridge`, and `AGB_*`.
+Move any existing configuration or cache into those directories before removing
+an older installation. Running `make install` removes obsolete command aliases.
 
 ## Try it without touching your own sessions
 
@@ -69,25 +79,35 @@ in [`demo/README.md`](demo/README.md).
 | `Shift+Tab` | Cycle the target backwards |
 | `Tab` | Open in the *next tool* right away, as a transcript-seeded fork |
 | `Ctrl+Y` | Toggle yolo: bypass permission checks for this launch only |
+| `Ctrl+←` `Ctrl+→` | Move the divider between the list and the card; the width is remembered |
 | `Esc` `Ctrl+C` | Cancel |
 
 ## Reading the list
 
-Every row carries a badge saying where the session lives and where `Enter` will
-take it.
+Each row is one session: where it lives, its title, its project and how long
+ago it was last touched. The card on the right shows the selected session's
+directory, account and id, then your latest prompts and the assistant's latest
+replies, with your search terms highlighted.
 
-| Badge | Meaning |
+| Row starts with | Meaning |
 | --- | --- |
-| `[OC]` | An OpenCode session, resumed natively. |
-| `[CC1]` | A Claude session owned by account `cc1`, resumed natively. |
-| `[CX1]` | A Codex session owned by account `cx1`, resumed natively. |
-| `[CC1→CC2]` | Owned by `cc1` while `cc2` is the target, so `Enter` forks it into `cc2`. |
-| `[CX1→OC]` | A Codex session while OpenCode is the target, so `Enter` forks it into OpenCode. |
+| `OC` | An OpenCode session, resumed natively. |
+| `CC1` | A Claude session owned by account `cc1`, resumed natively. |
+| `CX1` | A Codex session owned by account `cx1`, resumed natively. |
+| `CC1 →` | Enter carries it to the pinned target (shown in the header) as a seeded fork. The arrow takes the target tool's colour. |
 
-Until you press `Ctrl+T` the target follows the selection, so every row shows a
-plain badge and `Enter` resumes whatever you picked in the account it already
-belongs to. Cycling pins a destination; from then on each row shows the route to
-it.
+Until you press `Ctrl+T` the target follows the selection, so rows show no
+arrow and `Enter` resumes whatever you picked in the account it already belongs
+to. Cycling pins a destination: the header shows `target CX2`, crossing rows get
+an arrow, and the card spells out where `Enter` will open the session. The
+footer always says what `Enter` and `Tab` will do, and a red `YOLO` in the
+header means the launch will skip permission checks.
+
+`Ctrl+←` and `Ctrl+→` move the divider between the list and the card, and the
+next launch opens with the same split. On macOS those keys switch Spaces by
+default; free them under System Settings → Keyboard → Keyboard Shortcuts →
+Mission Control if you want them in the terminal. Below 90 columns the card is
+hidden and the list takes the whole width.
 
 ## Forking a session
 
@@ -116,7 +136,7 @@ terms light up in both columns.
 
 Cross-tool and cross-account opens do **not** migrate a session. Ids are not
 portable between OpenCode, Claude Code and Codex, or between two accounts of the
-same tool, so `ocs` starts a **new** session in the target and pastes the old
+same tool, so `agb` starts a **new** session in the target and pastes the old
 transcript in as context. Consequences worth knowing:
 
 - The original session still sits in its own tool, untouched.
@@ -129,6 +149,27 @@ Do it deliberately, at a boundary that makes sense: a task is finished, you want
 to keep the general context, and you'd rather continue in the other tool. `Tab`
 is not a live round trip, so treat it as "start fresh over there, with this
 history".
+
+For long conversations, the handoff includes the opening request, the latest
+user message, recent turns, and the latest readable compaction summary saved by
+the source tool, when one exists. Code blocks and line breaks are preserved.
+The opening prompt is limited to 60,000 bytes, including its metadata; this is
+a CLI transport limit, not a model-specific token budget. Oversized messages
+retain their beginning and end, with an explicit omission notice.
+
+Every seeded fork saves an untruncated copy of the extracted user and assistant
+text in `~/.cache/agentbridge/handoffs/`, beside the index cache, and gives the target
+agent its absolute path. Turns are numbered so omitted details can be read in
+ranges. The file also points to the source JSONL for tool outputs and attachments;
+OpenCode's complete JSON export is saved alongside the readable transcript.
+Files are private to your user, and later forks keep earlier snapshots valid.
+
+`agb` reuses saved summaries rather than making a new model call. When history
+is omitted from the prompt, it instructs the target agent to recover requirements
+and decisions from the saved transcript before acting. Encrypted compaction
+checkpoints cannot be reused as readable summaries across tools. Handoff files
+remain until you remove them; deleting them removes that recovery path from
+sessions that reference them. Dry runs also prepare these files.
 
 ## Sharing memory between tools
 
@@ -222,8 +263,8 @@ cx1() { command codex "$@"; }
 cx2() { CODEX_HOME="$HOME/.codex-cx2" command codex "$@"; }
 ```
 
-Authenticate each once (`cc2 auth login`, `cx2 login`), then tell `ocs` about
-them in `~/.config/ocs/config.json`:
+Authenticate each once (`cc2 auth login`, `cx2 login`), then tell `agb` about
+them in `~/.config/agentbridge/config.json`:
 
 ```json
 {
@@ -241,19 +282,19 @@ them in `~/.config/ocs/config.json`:
 }
 ```
 
-Omit `configDir` or `codexHome` for the tool's normal default account. `ocs` scans
+Omit `configDir` or `codexHome` for the tool's normal default account. `agb` scans
 each account's own store and remembers which account owns what, so a `cc1`
 session resumes in `cc1` unless you deliberately retarget it.
 
-Leave either block out and `ocs` falls back to that tool's default home, labelling
+Leave either block out and `agb` falls back to that tool's default home, labelling
 it `[CC]` or `[CX]`.
 
 Pick the starting target from the command line when that helps:
 
 ```bash
-ocs --target cx2            # any account name, or "oc" for OpenCode
-ocs --claude-account cc2    # the same thing, said the long way
-ocs --codex-account cx2
+agb --target cx2            # any account name, or "oc" for OpenCode
+agb --claude-account cc2    # the same thing, said the long way
+agb --codex-account cx2
 ```
 
 Full setup, verification and troubleshooting lives in
@@ -267,15 +308,15 @@ Launch the target tool with permission checks bypassed
 `codex --dangerously-bypass-approvals-and-sandbox`):
 
 ```bash
-ocs --dangerous     # also --skip-permissions / --yolo
-ocs --safe          # force checks back on, overriding the config default
+agb --dangerous     # also --skip-permissions / --yolo
+agb --safe          # force checks back on, overriding the config default
 ```
 
 To go yolo just once, press `Ctrl+Y` in the picker. The status line turns into a
 red `YOLO` for the launch you are about to make; press it again to go back to
 asking. Nothing is saved.
 
-Defaults live in `~/.config/ocs/config.json`, globally or per agent:
+Defaults live in `~/.config/agentbridge/config.json`, globally or per agent:
 
 ```json
 {
@@ -319,29 +360,31 @@ The setting follows the *target*, not the session: forking a `cc1` session into
 
 ### Dry run
 
-Set `OCS_DRY_RUN=1` and `ocs` prints what it *would* launch (the command, the
+Set `AGB_DRY_RUN=1` and `agb` prints what it *would* launch (the command, the
 account, the working directory) instead of launching it. Handy for checking how
 a route resolves, and for bug reports:
 
 ```console
-$ OCS_DRY_RUN=1 ocs
+$ AGB_DRY_RUN=1 agb
 would run CODEX_HOME=~/.codex-cx1 codex <transcript seed, 1655 chars>
   in ~/code/nebula-api
 ```
 
 ## Where the data comes from
 
-`ocs` reads each tool's existing store and never writes to them.
+`agb` reads each tool's existing store and never writes to them.
 
 | Source | Path | Override |
 | --- | --- | --- |
 | OpenCode | `~/.local/share/opencode/opencode.db` (SQLite) | `OPENCODE_DB_PATH` |
 | Claude Code | `~/.claude/projects/**/*.jsonl`, plus each account's `configDir` | `CLAUDE_PROJECTS_PATH` |
 | Codex | `~/.codex/sessions/**/rollout-*.jsonl`, plus each account's `codexHome` | `CODEX_HOME`, `CODEX_SESSIONS_PATH` |
-| `ocs` config | `~/.config/ocs/config.json` | `OCS_CONFIG_PATH` |
-| `ocs` cache | `~/.cache/ocs/index.gob` | `OCS_CACHE_PATH`, `XDG_CACHE_HOME` |
+| `agb` config | `~/.config/agentbridge/config.json` | `AGB_CONFIG_PATH` |
+| `agb` cache | `~/.cache/agentbridge/index.gob` | `AGB_CACHE_PATH`, `XDG_CACHE_HOME` |
+| Picker layout | `~/.cache/agentbridge/layout.json`, beside the cache | follows the cache |
+| Fork handoffs | `~/.cache/agentbridge/handoffs/`, beside the cache | follows the cache |
 
-`ocs` skips a store that's missing or unreadable instead of dying on it, so not
+`agb` skips a store that's missing or unreadable instead of dying on it, so not
 having OpenCode installed still gets you your Claude and Codex sessions.
 
 Codex files each session as a rollout under `sessions/YYYY/MM/DD/` and archives
@@ -351,9 +394,9 @@ rollout, which is why a Codex row is titled by its opening prompt.
 
 ## Why it starts fast
 
-Reading every transcript on every launch is what used to make `ocs` slow: on a
+Reading every transcript on every launch is what used to make `agb` slow: on a
 machine with a few hundred sessions that is hundreds of megabytes of JSONL. Now
-`ocs` keeps a cache of what each transcript boiled down to and only reads what
+`agb` keeps a cache of what each transcript boiled down to and only reads what
 changed since the last launch:
 
 ```mermaid
@@ -371,13 +414,13 @@ Claude Code and Codex only ever append to a transcript, so the session you are
 in the middle of, usually the biggest and the only one that changed, costs just
 its new lines. The first launch builds the cache and takes as long as a full
 read; after that the picker is up in a few tens of milliseconds. The cache is
-safe to delete, and `ocs --rescan` rebuilds it.
+safe to delete, and `agb --rescan` rebuilds it.
 
 ## Development
 
 ```bash
-go run ./cmd/ocs            # run the picker from source
-go run ./cmd/ocs --print    # list recent sessions, no TUI
+go run ./cmd/agb            # run the picker from source
+go run ./cmd/agb --print    # list recent sessions, no TUI
 make demo                   # picker against synthetic sessions, opening stubbed out
 make vet test build
 ```

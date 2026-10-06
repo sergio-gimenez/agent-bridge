@@ -18,15 +18,15 @@ type OpenOptions struct {
 	Account         *Account
 }
 
-// envOverride is one variable ocs itself sets. Everything else is inherited,
+// envOverride is one variable AgentBridge itself sets. Everything else is inherited,
 // but an inherited value is not part of the route and must not be rendered as
-// if ocs had chosen it. An empty value means "unset this for the child".
+// if AgentBridge had chosen it. An empty value means "unset this for the child".
 type envOverride struct {
 	Name  string
 	Value string
 }
 
-// dryRunOut is where OCS_DRY_RUN reports go; tests swap it.
+// dryRunOut is where AGB_DRY_RUN reports go; tests swap it.
 var dryRunOut io.Writer = os.Stdout
 
 const seedPromptMinChars = 200
@@ -98,7 +98,7 @@ func launch(command string, args []string, directory string, env []envOverride) 
 		return 1, err
 	}
 
-	if os.Getenv("OCS_DRY_RUN") != "" {
+	if dryRunEnabled() {
 		fmt.Fprintf(dryRunOut, "\x1b[36mwould run\x1b[0m %s\n", RenderCommand(command, args, directory, env))
 		return 0, nil
 	}
