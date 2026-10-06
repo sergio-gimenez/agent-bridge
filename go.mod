@@ -3,6 +3,7 @@ module github.com/sergio-gimenez/opencode-sessions
 go 1.23.1
 
 require (
+	github.com/pelletier/go-toml/v2 v2.2.0
 	golang.org/x/term v0.25.0
 	modernc.org/sqlite v1.33.1
 )

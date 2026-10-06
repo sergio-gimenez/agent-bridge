@@ -8,15 +8,36 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Rewritten in Go.** `ocs` is now a single static binary with no Node
+- The project is now **AgentBridge**, with `agb` as its CLI. The local installer
+  removes obsolete command aliases. Configuration, cache paths, and environment
+  overrides use `~/.config/agentbridge`, `~/.cache/agentbridge`, and `AGB_*`.
+  Legacy configuration remains readable during migration.
+- Cross-tool and cross-account handoffs preserve text formatting, carry the
+  opening request and latest readable saved compaction summary, and retain
+  recent turns within a 60,000-byte prompt budget. Untruncated conversation
+  snapshots in `~/.cache/agentbridge/handoffs/` let the receiving agent recover omitted
+  requirements and decisions. OpenCode's complete raw export is saved too.
+- **A cleaner picker.** One line per session (source, title, project, age like
+  `12m` or `3d`) instead of four, so about three times as many fit on screen,
+  and the list scrolls with the selection instead of paging. The selected
+  session sits in a rounded card with its prompts and replies wrapped in
+  conversation order. One footer line says what each key will do. A pinned
+  target shows as an arrow in the target tool's colour instead of a
+  `[CC1→CX2]` badge on every row. Wide characters such as emoji and CJK no
+  longer throw the columns out of line.
+- `Ctrl+←` / `Ctrl+→` resize the list against the card, and the split is
+  remembered in `~/.cache/agentbridge/layout.json`.
+- A split escape sequence (an arrow key arriving in two reads over a slow SSH
+  link) no longer cancels the picker as if Escape had been pressed.
+- **Rewritten in Go.** `agb` is now a single static binary with no Node
   runtime, and the picker is up in a few tens of milliseconds instead of
   seconds. Output, keys, flags and config are unchanged.
-- A session cache at `~/.cache/ocs/index.gob` (`OCS_CACHE_PATH` to move it)
+- A session cache at `~/.cache/agentbridge/index.gob` (`AGB_CACHE_PATH` to move it)
   means a launch only reads transcripts that changed since the last one, and
   for a transcript that grew, only its new lines. OpenCode prompts are
   re-queried only for sessions whose `time_updated` moved. `--rescan` rebuilds
   the cache.
-- Opening a session replaces the `ocs` process with the tool instead of
+- Opening a session replaces the `agb` process with the tool instead of
   running it as a child.
 - The picker draws on the terminal's alternate screen, so your scrollback is
   left as it was, and redraws in place instead of clearing on every keystroke.
@@ -26,19 +47,24 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Codex as a third tool.** `ocs` reads Codex rollouts from
+- Shared setup profiles for local skill folders and stdio/HTTP MCP definitions
+  across OpenCode, Claude Code, and Codex accounts. `agb setup --example` prints
+  a starter configuration, `agb plan` previews changes, and `agb sync` applies
+  them with ownership tracking, conflict/drift detection, and private backups.
+  `--check`, `--dry-run`, and `--json` support automation and agent-driven setup.
+- **Codex as a third tool.** `agb` reads Codex rollouts from
   `~/.codex/sessions/**/rollout-*.jsonl`, lists them alongside OpenCode and
   Claude sessions under `[CX*]` badges, resumes them with `codex resume <id>`
   and forks them natively with `codex fork <id>`.
 - Multiple Codex accounts, mirroring the Claude ones: `codexAccounts` and
-  `defaultCodexAccount` in `~/.config/ocs/config.json`, each account naming its
+  `defaultCodexAccount` in `~/.config/agentbridge/config.json`, each account naming its
   own isolated `CODEX_HOME`.
 - `--target NAME` selects the initial target by account name, or `oc` for
   OpenCode. `--codex-account` joins `--claude-account` as the long way to say
   the same thing.
 - `CODEX_HOME` and `CODEX_SESSIONS_PATH` override where Codex sessions are read
   from, the way `CLAUDE_PROJECTS_PATH` already did for Claude.
-- `OCS_DRY_RUN=1` prints the command `ocs` would run (target tool, account,
+- `AGB_DRY_RUN=1` prints the command `agb` would run (target tool, account,
   working directory) instead of launching it.
 - A synthetic demo fixture (`npm run demo`) that builds a complete fake home of
   OpenCode, Claude and Codex sessions, so the picker can be tried, developed
@@ -80,8 +106,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the target happened to sit on the highlighted Codex session; every badge now
   stays native until a target is pinned.
 - A `CLAUDE_CONFIG_DIR` inherited from the surrounding shell is no longer
-  printed by `OCS_DRY_RUN` as though `ocs` had chosen it.
-- `ocs --print | head` no longer dies with an unhandled `EPIPE` stack trace when
+  printed by `AGB_DRY_RUN` as though `agb` had chosen it.
+- `agb --print | head` no longer dies with an unhandled `EPIPE` stack trace when
   the reader closes the pipe early.
 - `--print` now abbreviates the home directory to `~` the way the picker
   already did, so listings are consistent and safer to paste into an issue.

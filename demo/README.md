@@ -1,6 +1,6 @@
 # Demo
 
-Everything needed to run and record `ocs` against **synthetic** sessions. No
+Everything needed to run and record `agb` against **synthetic** sessions. No
 real session history is read, and nothing is ever launched.
 
 ## Try it
@@ -17,7 +17,7 @@ and both Codex accounts, `Enter` or `Tab` to "open", which prints the command it
 ## What the fixture is
 
 `make demo-fixture` turns [`data.json`](data.json) into a complete fake home
-under `demo/.fixture/home`, laid out exactly where `ocs` looks by default:
+under `demo/.fixture/home`, laid out exactly where `agb` looks by default:
 
 ```
 .local/share/opencode/opencode.db   OpenCode's SQLite store
@@ -25,7 +25,7 @@ under `demo/.fixture/home`, laid out exactly where `ocs` looks by default:
 .claude-cc2/projects/...            Claude account "cc2"
 .codex-cx1/sessions/...             Codex account "cx1"
 .codex-cx2/sessions/...             Codex account "cx2"
-.config/ocs/config.json             ocs config naming every account
+.config/agentbridge/config.json     AgentBridge config naming every account
 ```
 
 Running the demo is then just `HOME=<that>`, with no path overrides and nothing
@@ -35,7 +35,7 @@ into a real home directory. `demo/.fixture/` is gitignored.
 
 Timestamps are relative to build time, so the picker always shows a plausible
 recent history. The session cache lands inside the fixture home too
-(`.cache/ocs/`), so the demo never touches your real one.
+(`.cache/agentbridge/`), so the demo never touches your real one.
 
 ## Adding sessions
 
@@ -77,6 +77,6 @@ recording. To change what the demo does, edit the steps there.
 local binary if present and the official container image otherwise.
 
 Both scripts unset `CLAUDE_CONFIG_DIR`, `CLAUDE_PROJECTS_PATH`, `CODEX_HOME`,
-`CODEX_SESSIONS_PATH`, `OPENCODE_DB_PATH`, `OCS_CONFIG_PATH`, `OCS_CACHE_PATH`
+`CODEX_SESSIONS_PATH`, `OPENCODE_DB_PATH`, `AGB_CONFIG_PATH`, `AGB_CACHE_PATH`
 and `XDG_CACHE_HOME` so nothing from
 the recorder's own environment leaks into the recording.

@@ -3,6 +3,7 @@ package ocs
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -78,6 +79,55 @@ func TestParseConfig(t *testing.T) {
 	}
 }
 
+func TestAgentBridgePathsPreferNewAndFallbackToOCS(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
+	t.Setenv("AGB_CONFIG_PATH", "")
+	t.Setenv("OCS_CONFIG_PATH", "")
+	t.Setenv("AGB_CACHE_PATH", "")
+	t.Setenv("OCS_CACHE_PATH", "")
+
+	cacheRoot, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newConfig := filepath.Join(root, ".config", "agentbridge", "config.json")
+	oldConfig := filepath.Join(root, ".config", "ocs", "config.json")
+	newCache := filepath.Join(cacheRoot, "agentbridge", "index.gob")
+	oldCache := filepath.Join(cacheRoot, "ocs", "index.gob")
+	if ConfigPath() != newConfig || CachePath() != newCache {
+		t.Fatal("fresh install should use AgentBridge paths")
+	}
+	putSetupFile(t, oldConfig, "{}")
+	putSetupFile(t, oldCache, "legacy")
+	if ConfigPath() != oldConfig || CachePath() != oldCache {
+		t.Fatal("existing ocs paths should remain authoritative")
+	}
+	putSetupFile(t, newConfig, "{}")
+	putSetupFile(t, newCache, "current")
+	if ConfigPath() != newConfig || CachePath() != newCache {
+		t.Fatal("AgentBridge paths should win when both exist")
+	}
+
+	t.Setenv("OCS_CONFIG_PATH", filepath.Join(root, "legacy-config.json"))
+	t.Setenv("OCS_CACHE_PATH", filepath.Join(root, "legacy-cache.gob"))
+	if !strings.Contains(ConfigPath(), "legacy-config") || !strings.Contains(CachePath(), "legacy-cache") {
+		t.Fatal("legacy environment overrides should work")
+	}
+	t.Setenv("AGB_CONFIG_PATH", filepath.Join(root, "agentbridge-config.json"))
+	t.Setenv("AGB_CACHE_PATH", filepath.Join(root, "agentbridge-cache.gob"))
+	if !strings.Contains(ConfigPath(), "agentbridge-config") || !strings.Contains(CachePath(), "agentbridge-cache") {
+		t.Fatal("AgentBridge environment overrides should take precedence")
+	}
+
+	t.Setenv("AGB_DRY_RUN", "")
+	t.Setenv("OCS_DRY_RUN", "1")
+	if !dryRunEnabled() {
+		t.Fatal("legacy dry-run override should work")
+	}
+}
+
 func TestSkipPermissionsPrecedence(t *testing.T) {
 	config := mustConfig(t, `{
 		"skipPermissions": true,
@@ -121,8 +171,8 @@ func TestContinuationPrompt(t *testing.T) {
 	for _, want := range []string{
 		"prior Claude Code conversation",
 		"Original session: sid",
-		"Latest user message: Add badges too.",
-		"Reply directly to the latest user message first",
+		"Latest user message: [turn 3]\nAdd badges too.",
+		"do not repeat work",
 		"USER: How do I make the picker responsive?",
 		"ASSISTANT: Use terminal width.",
 		"=== TRANSCRIPT ===",
@@ -141,15 +191,15 @@ func TestContinuationPrompt(t *testing.T) {
 		turns = append(turns, Turn{role, "TURN" + strconv.Itoa(i) + "::" + strings.Repeat("x", 5000)})
 	}
 	long := BuildContinuationPrompt(session, turns)
-	if !strings.Contains(long, "earlier turns omitted for length") ||
-		!strings.Contains(long, "TURN39::") || strings.Contains(long, "TURN0::") {
-		t.Fatal("the oldest turns should be dropped, the newest kept")
+	if !strings.Contains(long, "earlier turns omitted from this excerpt") ||
+		!strings.Contains(long, "TURN39::") || !strings.Contains(long, "TURN0::") || strings.Contains(long, "TURN2::") {
+		t.Fatal("the opening request and newest turns should be kept, with a notice for omitted history")
 	}
 }
 
 func dryRun(t *testing.T, open func() (int, error)) string {
 	t.Helper()
-	t.Setenv("OCS_DRY_RUN", "1")
+	t.Setenv("AGB_DRY_RUN", "1")
 	var out bytes.Buffer
 	dryRunOut = &out
 	defer func() { dryRunOut = os.Stdout }()
@@ -191,7 +241,7 @@ func TestLaunchCommands(t *testing.T) {
 	}
 
 	// The surrounding shell's CLAUDE_CONFIG_DIR is inherited, but it is not
-	// part of the route and must not be printed as though ocs had chosen it.
+	// part of the route and must not be printed as though AgentBridge had chosen it.
 	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/.claude-cc2")
 	if output := dryRun(t, func() (int, error) { return OpenCodexSession("sid", dir, OpenOptions{}) }); strings.Contains(output, "CLAUDE_CONFIG_DIR") {
 		t.Fatalf("inherited env rendered: %q", output)

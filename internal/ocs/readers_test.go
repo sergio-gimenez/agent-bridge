@@ -252,6 +252,7 @@ func TestCodexFilesSkipArchived(t *testing.T) {
 }
 
 func TestSeedFromCodexRollout(t *testing.T) {
+	t.Setenv("OCS_CACHE_PATH", filepath.Join(t.TempDir(), "index.gob"))
 	path := filepath.Join(t.TempDir(), "rollout.jsonl")
 	os.WriteFile(path, []byte(codexFixture(t)), 0o644)
 
@@ -269,7 +270,7 @@ func TestSeedFromCodexRollout(t *testing.T) {
 		"prior Codex conversation",
 		"USER: Why does the mesh VPN handshake time out?",
 		"ASSISTANT: The WireGuard keepalive is unset.",
-		"Latest user message: Set it to 25 seconds then.",
+		"Latest user message: [turn 3]\nSet it to 25 seconds then.",
 	} {
 		if !strings.Contains(seed.Prompt, want) {
 			t.Fatalf("prompt lacks %q", want)

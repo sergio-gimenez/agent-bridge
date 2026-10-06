@@ -1,5 +1,5 @@
-// Package ocs lists OpenCode, Claude Code and Codex sessions in one picker and
-// opens the chosen one in any configured tool and account.
+// Package ocs implements AgentBridge's shared session picker and setup sync for
+// OpenCode, Claude Code and Codex.
 package ocs
 
 import "strings"

@@ -12,21 +12,22 @@ cast="$root/docs/demo.cast"
 command -v asciinema >/dev/null || { echo "asciinema not found" >&2; exit 1; }
 
 cd "$root"
-go build -o bin/ocs ./cmd/ocs
+go build -o bin/agb ./cmd/agb
 go run ./demo/fixture
 mkdir -p "$root/docs"
 
 export HOME="$here/.fixture/home"
-export OCS_DRY_RUN=1
+export AGB_DRY_RUN=1
 # Nothing from the recorder's own environment should reach the recording.
 unset CLAUDE_CONFIG_DIR CLAUDE_PROJECTS_PATH CODEX_HOME CODEX_SESSIONS_PATH \
-      OPENCODE_DB_PATH OCS_CONFIG_PATH OCS_CACHE_PATH XDG_CACHE_HOME
+      OPENCODE_DB_PATH AGB_CONFIG_PATH AGB_CACHE_PATH OCS_CONFIG_PATH \
+      OCS_CACHE_PATH OCS_DRY_RUN XDG_CACHE_HOME
 
 bash "$here/keys.sh" | asciinema rec \
   --overwrite --quiet \
   --cols 120 --rows 32 \
-  --title "ocs - one picker for OpenCode, Claude Code and Codex sessions" \
-  --command "$root/bin/ocs" \
+  --title "AgentBridge - sessions and setup across coding agents" \
+  --command "$root/bin/agb" \
   "$cast"
 
 echo "Wrote ${cast#"$root"/}"

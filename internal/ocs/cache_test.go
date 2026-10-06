@@ -14,7 +14,7 @@ func claudeLineJSON(t *testing.T, text string) string {
 }
 
 // scan runs one launch's worth of reading against the cache at cachePath and
-// saves it, like ocs does.
+// saves it, like AgentBridge does.
 func scan(t *testing.T, cachePath string, account *Account) []Session {
 	t.Helper()
 	cache := OpenCache(cachePath, false)

@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest something ocs should do
+description: Suggest something AgentBridge should do
 labels: [enhancement]
 body:
   - type: textarea
@@ -13,7 +13,7 @@ body:
   - type: textarea
     id: idea
     attributes:
-      label: What you would like ocs to do
+      label: What you would like AgentBridge to do
 
   - type: textarea
     id: workaround

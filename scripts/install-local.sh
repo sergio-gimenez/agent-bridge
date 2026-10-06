@@ -4,24 +4,25 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="${HOME}/.local/bin"
-TARGET="${BIN_DIR}/ocs"
+TARGET="${BIN_DIR}/agb"
+OLD_TARGET="${BIN_DIR}/ocs"
 LEGACY_TARGET="${BIN_DIR}/ocsessions"
 
 mkdir -p "${BIN_DIR}"
 cd "${ROOT_DIR}"
 
-command -v go >/dev/null || { echo "Go is required to build ocs: https://go.dev/dl/" >&2; exit 1; }
+command -v go >/dev/null || { echo "Go is required to build AgentBridge: https://go.dev/dl/" >&2; exit 1; }
 
-# A real binary, not a wrapper script: nothing starts before ocs itself does.
-# Build beside the target and rename, so a running ocs is never overwritten in
+# A real binary, not a wrapper script: nothing starts before AgentBridge itself does.
+# Build beside the target and rename, so a running agb is never overwritten in
 # place.
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "${TARGET}.new" ./cmd/ocs
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "${TARGET}.new" ./cmd/agb
 mv -f "${TARGET}.new" "${TARGET}"
-rm -f "${LEGACY_TARGET}"
+rm -f "${OLD_TARGET}" "${LEGACY_TARGET}"
 
-printf 'Installed ocs at %s\n' "${TARGET}"
+printf 'Installed AgentBridge at %s\n' "${TARGET}"
 
-# ocs carries a conversation between tools, but not what the agent remembers.
+# AgentBridge carries a conversation between tools, but not what the agent remembers.
 # Point at the plugins that share Claude Code's memory files with the other two,
 # only for tools that are installed and don't have one set up yet.
 has_tool() {
@@ -55,7 +56,7 @@ fi
 
 if [ "${#tips[@]}" -gt 0 ]; then
   printf '\nTip: share Claude Code memory with your other tools, so a session you\n'
-  printf 'move with ocs keeps what the agent has learned about the project.\n'
+  printf 'move with agb keeps what the agent has learned about the project.\n'
   printf '%s\n' "${tips[@]}"
 fi
 
@@ -106,7 +107,7 @@ fi
 
 if [ "${#diagram_tips[@]}" -gt 0 ]; then
   printf '\nTip: render Mermaid diagrams in every tool, so a session you move with\n'
-  printf 'ocs can still draw one. https://github.com/veelenga/claude-mermaid\n'
+  printf 'agb can still draw one. https://github.com/veelenga/claude-mermaid\n'
   printf '%s\n' "${diagram_tips[@]}"
 fi
 

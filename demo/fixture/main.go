@@ -3,7 +3,7 @@
 // real machine's history.
 //
 // Everything lands under demo/.fixture/home (gitignored), laid out exactly
-// where ocs looks by default. Running the demo is then just HOME=<that>, with
+// where AgentBridge looks by default. Running the demo is then just HOME=<that>, with
 // no path overrides and nothing pointing back at the real machine:
 //
 //	.local/share/opencode/opencode.db   OpenCode's session store
@@ -11,7 +11,7 @@
 //	.claude-cc2/projects/...            Claude account "cc2"
 //	.codex-cx1/sessions/...             Codex account "cx1"
 //	.codex-cx2/sessions/...             Codex account "cx2"
-//	.config/ocs/config.json             ocs config naming every account
+//	.config/agentbridge/config.json     AgentBridge config naming every account
 //
 // The home path is built from the repository's demo/ directory rather than
 // read from $HOME, so this can never write into a real home directory.
@@ -94,7 +94,7 @@ func buildOpencodeDB(entries []*entry, path string) {
 	must(err)
 	defer db.Close()
 
-	// Only the columns ocs actually reads; the real schema is much wider.
+	// Only the columns AgentBridge actually reads; the real schema is much wider.
 	_, err = db.Exec(`
 		create table session (
 			id text primary key, project_id text not null, directory text not null,
@@ -239,7 +239,7 @@ func main() {
 		"defaultCodexAccount":  "cx1",
 	}, "", "  ")
 	must(err)
-	writeFile(filepath.Join(home, ".config", "ocs", "config.json"), string(config)+"\n", time.Time{})
+	writeFile(filepath.Join(home, ".config", "agentbridge", "config.json"), string(config)+"\n", time.Time{})
 
 	var counts []string
 	for _, tool := range []string{"opencode", "cc1", "cc2", "cx1", "cx2"} {
