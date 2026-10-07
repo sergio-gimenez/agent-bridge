@@ -13,6 +13,13 @@
 //	.codex-cx2/sessions/...             Codex account "cx2"
 //	.config/agentbridge/config.json     AgentBridge config naming every account
 //
+// Entries with "machine": "desk" go to a second home, demo/.fixture/desk, which
+// stands in for another machine: the demos browse it (Ctrl+R), pull from it and
+// push to it through AGB_DEMO_REMOTES=desk=<that dir>. Its sessions name their
+// directories as this home would, since a real second machine of the same user
+// has the same home path. It gets stub claude, codex and herdr commands and a
+// link to bin/agb, so its "agb --print --json" answers like a real machine's.
+//
 // The home path is built from the repository's demo/ directory rather than
 // read from $HOME, so this can never write into a real home directory.
 //
@@ -37,11 +44,12 @@ import (
 // account name. Codex stores no title, so a Codex row is titled by its opening
 // prompt and Title is only a label for whoever edits the file.
 type entry struct {
-	Tool  string      `json:"tool"`
-	Ago   int         `json:"ago"`
-	Dir   string      `json:"dir"`
-	Title string      `json:"title"`
-	Turns [][2]string `json:"turns"`
+	Tool    string      `json:"tool"`
+	Machine string      `json:"machine,omitempty"`
+	Ago     int         `json:"ago"`
+	Dir     string      `json:"dir"`
+	Title   string      `json:"title"`
+	Turns   [][2]string `json:"turns"`
 
 	index     int
 	directory string
@@ -68,6 +76,17 @@ func writeFile(path string, contents string, modTime time.Time) {
 	if !modTime.IsZero() {
 		must(os.Chtimes(path, modTime, modTime))
 	}
+}
+
+func writeConfig(home string, config obj) {
+	data, err := json.MarshalIndent(config, "", "  ")
+	must(err)
+	writeFile(filepath.Join(home, ".config", "agentbridge", "config.json"), string(data)+"\n", time.Time{})
+}
+
+func writeStub(path, body string) {
+	writeFile(path, "#!/bin/sh\n"+body+"\n", time.Time{})
+	must(os.Chmod(path, 0o755))
 }
 
 func jsonLine(value any) string {
@@ -187,6 +206,8 @@ func main() {
 		must(fmt.Errorf("run from the repository root: %w", err))
 	}
 	home := filepath.Join(demoDir, ".fixture", "home")
+	desk := filepath.Join(demoDir, ".fixture", "desk")
+	onDesk := func(path string) string { return desk + strings.TrimPrefix(path, home) }
 
 	claudeAccounts := []account{
 		{Name: "cc1", ConfigDir: filepath.Join(home, ".claude-cc1")},
@@ -204,6 +225,7 @@ func main() {
 
 	now := time.Now()
 	byTool := map[string][]*entry{}
+	deskByTool := map[string][]*entry{}
 	for i, e := range entries {
 		e.index = i
 		e.directory = e.Dir
@@ -211,40 +233,84 @@ func main() {
 			e.directory = filepath.Join(home, e.Dir[2:])
 		}
 		e.updatedAt = now.Add(-time.Duration(e.Ago) * time.Minute)
-		byTool[e.Tool] = append(byTool[e.Tool], e)
+		if e.Machine == "desk" {
+			deskByTool[e.Tool] = append(deskByTool[e.Tool], e)
+		} else {
+			byTool[e.Tool] = append(byTool[e.Tool], e)
+		}
 	}
 
 	must(os.RemoveAll(home))
+	must(os.RemoveAll(desk))
 	must(os.MkdirAll(home, 0o755))
 
-	// The picker refuses to open a session whose recorded cwd has gone, so the
-	// project directories must exist even though they stay empty.
+	// The picker refuses to open a session whose recorded cwd has gone, and a
+	// push or pull needs the project on both sides, so every project directory
+	// exists on both machines even though they stay empty.
 	for _, e := range entries {
 		must(os.MkdirAll(e.directory, 0o755))
+		must(os.MkdirAll(onDesk(e.directory), 0o755))
 	}
 
 	buildOpencodeDB(byTool["opencode"], filepath.Join(home, ".local", "share", "opencode", "opencode.db"))
+	var deskClaude, deskCodex []account
 	for _, a := range claudeAccounts {
 		buildClaudeAccount(byTool[a.Name], a.ConfigDir)
+		buildClaudeAccount(deskByTool[a.Name], onDesk(a.ConfigDir))
+		deskClaude = append(deskClaude, account{Name: a.Name, ConfigDir: onDesk(a.ConfigDir)})
 	}
 	for _, a := range codexAccounts {
 		buildCodexAccount(byTool[a.Name], a.CodexHome)
+		buildCodexAccount(deskByTool[a.Name], onDesk(a.CodexHome))
+		deskCodex = append(deskCodex, account{Name: a.Name, CodexHome: onDesk(a.CodexHome)})
 	}
 
-	config, err := json.MarshalIndent(obj{
+	// The arrive hook opens a pushed session in a herdr tab on desk, as a real
+	// setup would; desk's herdr is a stub that answers like one.
+	writeConfig(home, obj{
 		"skipPermissions":      false,
 		"claudeAccounts":       claudeAccounts,
 		"defaultClaudeAccount": "cc1",
 		"codexAccounts":        codexAccounts,
 		"defaultCodexAccount":  "cx1",
-	}, "", "  ")
-	must(err)
-	writeFile(filepath.Join(home, ".config", "agentbridge", "config.json"), string(config)+"\n", time.Time{})
+		"moveHosts":            []string{"desk"},
+		"arrive": obj{
+			"desk": `p=$(herdr tab create --label {title} --cwd {dir} --no-focus | jq -r .result.root_pane.pane_id) && herdr pane run "$p" {resume}`,
+		},
+	})
+	writeConfig(desk, obj{
+		"claudeAccounts":       deskClaude,
+		"defaultClaudeAccount": "cc1",
+		"codexAccounts":        deskCodex,
+		"defaultCodexAccount":  "cx1",
+	})
+
+	// Both machines can resume (a push or pull checks for the tool), and desk's
+	// accounts are logged in.
+	for _, dir := range []string{home, desk} {
+		writeStub(filepath.Join(dir, ".local", "bin", "claude"), "exit 0")
+		writeStub(filepath.Join(dir, ".local", "bin", "codex"), "exit 0")
+	}
+	writeStub(filepath.Join(desk, ".local", "bin", "herdr"), `case "$1 $2" in
+  "tab create") echo '{"result":{"root_pane":{"pane_id":"w1:p2"}}}' ;;
+esac`)
+	must(os.Symlink(filepath.Join(filepath.Dir(demoDir), "bin", "agb"), filepath.Join(desk, ".local", "bin", "agb")))
+	for _, a := range deskClaude {
+		writeFile(filepath.Join(a.ConfigDir, ".credentials.json"), "{}\n", time.Time{})
+	}
+	for _, a := range deskCodex {
+		writeFile(filepath.Join(a.CodexHome, "auth.json"), "{}\n", time.Time{})
+	}
 
 	var counts []string
 	for _, tool := range []string{"opencode", "cc1", "cc2", "cx1", "cx2"} {
 		counts = append(counts, fmt.Sprintf("%s=%d", tool, len(byTool[tool])))
 	}
+	deskCount := 0
+	for _, list := range deskByTool {
+		deskCount += len(list)
+	}
+	counts = append(counts, fmt.Sprintf("desk=%d", deskCount))
 	cwd, _ := os.Getwd()
 	relative, err := filepath.Rel(cwd, home)
 	if err != nil {
