@@ -88,6 +88,10 @@ func run() (int, error) {
 		InitialTarget:   initialTarget,
 		SkipPermissions: skipFor,
 		AfterFirstDraw:  save,
+		Layout:          ocs.LoadLayout(ocs.LayoutPath()),
+		SaveLayout: func(layout ocs.Layout) {
+			_ = ocs.SaveLayout(ocs.LayoutPath(), layout)
+		},
 	})
 	if err != nil {
 		if errors.Is(err, ocs.ErrCancelled) {

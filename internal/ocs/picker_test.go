@@ -1,9 +1,13 @@
 package ocs
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 var (
@@ -121,7 +125,13 @@ func TestDecodeKeys(t *testing.T) {
 		"\x1b[5~":       {{Name: "pageup"}},
 		"\x1b[6~":       {{Name: "pagedown"}},
 		"\x1b[Z":        {{Name: "backtab"}},
-		"\x1b[1;5A":     {{Name: "up"}},
+		"\x1b[1;5A":     {{Name: "up", Ctrl: true}},
+		"\x1b[1;5C":     {{Name: "right", Ctrl: true}},
+		"\x1b[1;5D":     {{Name: "left", Ctrl: true}},
+		"\x1b[5C":       {{Name: "right"}},
+		"\x1b[1;3C":     {{Name: "right"}}, // Alt, not Ctrl
+		"\x1bOc":        {{Name: "right", Ctrl: true}},
+		"\x1bOd":        {{Name: "left", Ctrl: true}},
 		"\x14":          {{Name: "t", Ctrl: true}},
 		"\x19":          {{Name: "y", Ctrl: true}},
 		"\x7f":          {{Name: "backspace"}},
@@ -196,28 +206,203 @@ func TestPickerYoloToggle(t *testing.T) {
 	}
 }
 
-func TestFrameFitsTheTerminal(t *testing.T) {
-	session := claudeTestSession()
-	session.Title = strings.Repeat("very long title ", 20)
-	session.Prompts = []string{strings.Repeat("prompt ", 40)}
-	p := newTestPicker([]Session{session}, nil)
-
-	frame := p.frame(80, 24)
-	lines := strings.Split(frame, "\r\n")
-	if len(lines) > 24 {
-		t.Fatalf("frame is %d rows tall", len(lines))
-	}
-	for _, line := range lines {
-		if width := visibleWidth(strings.NewReplacer("\x1b[K", "", "\x1b[J", "", "\x1b[H", "").Replace(line)); width > 79 {
-			t.Fatalf("line is %d wide: %q", width, line)
-		}
-	}
-}
-
 func TestHighlightNeverSplitsEscapes(t *testing.T) {
 	got := highlightTerms("Mesh VPN mesh", []string{"mesh"})
 	want := yellow("Mesh") + " VPN " + yellow("mesh")
 	if got != want {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRelativeTime(t *testing.T) {
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.Local)
+	ago := func(d time.Duration) float64 { return float64(now.Add(-d).UnixMilli()) }
+	cases := map[float64]string{
+		ago(20 * time.Second):     "now",
+		ago(12 * time.Minute):     "12m",
+		ago(3 * time.Hour):        "3h",
+		ago(49 * time.Hour):       "2d",
+		ago(20 * 24 * time.Hour):  "Sep 8",
+		ago(400 * 24 * time.Hour): "2025",
+	}
+	for ms, want := range cases {
+		if got := relativeTime(ms, now); got != want {
+			t.Errorf("relativeTime = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestWrapText(t *testing.T) {
+	got := wrapText("the quick brown fox jumps over", 10)
+	if !reflect.DeepEqual(got, []string{"the quick", "brown fox", "jumps over"}) {
+		t.Fatalf("got %q", got)
+	}
+	// A word longer than the line is split rather than overflowing.
+	for _, line := range wrapText("supercalifragilistic", 8) {
+		if len(line) > 8 {
+			t.Fatalf("line %q is too wide", line)
+		}
+	}
+	// A two-cell character in a one-cell width must not loop forever.
+	if got := wrapText("🍷", 1); len(got) != 1 {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestIncompleteEscape(t *testing.T) {
+	cases := map[string]int{
+		"abc":        -1,
+		"\x1b":       0,
+		"ab\x1b":     2,
+		"\x1b[":      0,
+		"\x1b[1;5":   0,
+		"\x1b[A":     -1,
+		"x\x1bO":     1,
+		"\x1b[A\x1b": 3,
+	}
+	for input, want := range cases {
+		if got := incompleteEscape([]byte(input)); got != want {
+			t.Errorf("incompleteEscape(%q) = %d, want %d", input, got, want)
+		}
+	}
+}
+
+func frameLines(t *testing.T, p *picker, cols, rows int) []string {
+	t.Helper()
+	frame := strings.TrimPrefix(p.frame(cols, rows), "\x1b[H")
+	lines := strings.Split(frame, "\r\n")
+	if len(lines) != rows {
+		t.Fatalf("frame is %d rows, want %d", len(lines), rows)
+	}
+	for _, line := range lines {
+		if width := visibleWidth(line); width > cols-1 {
+			t.Fatalf("line is %d cells wide in a %d-column terminal: %q", width, cols, line)
+		}
+	}
+	return lines
+}
+
+func TestFrameFitsEveryTerminalSize(t *testing.T) {
+	session := claudeTestSession()
+	session.Title = "Hermes 🍷 Vino " + strings.Repeat("very long title ", 20)
+	session.Prompts = []string{strings.Repeat("prompt 漢字 ", 40)}
+	session.AssistantSnippet = []string{"short"}
+	sessions := []Session{session, codexTestSession(), opencodeTestSession()}
+
+	for _, size := range [][2]int{{60, 10}, {80, 24}, {100, 30}, {160, 50}, {220, 12}} {
+		p := newTestPicker(sessions, nil)
+		frameLines(t, p, size[0], size[1])
+		p.handle(Key{Name: "t", Ctrl: true})
+		frameLines(t, p, size[0], size[1])
+	}
+}
+
+func TestListScrollsToTheSelection(t *testing.T) {
+	var sessions []Session
+	for i := 0; i < 50; i++ {
+		session := claudeTestSession()
+		session.Title = "session " + strconv.Itoa(i)
+		sessions = append(sessions, session)
+	}
+	p := newTestPicker(sessions, nil)
+	for i := 0; i < 30; i++ {
+		p.handle(Key{Name: "down"})
+	}
+	lines := frameLines(t, p, 120, 20)
+	if !strings.Contains(strings.Join(lines, "\n"), "session 30") {
+		t.Fatal("the selected row scrolled out of view")
+	}
+}
+
+func TestRouteArrowOnlyWhenCrossing(t *testing.T) {
+	native, codex := claudeTestSession(), codexTestSession()
+	if strings.Contains(badgeCell(&native, &cc1, 0), "→") {
+		t.Fatal("a native row should not show an arrow")
+	}
+	if !strings.Contains(badgeCell(&codex, &cc1, 0), "→") {
+		t.Fatal("a crossing row should show an arrow")
+	}
+}
+
+func cardWidth(t *testing.T, p *picker, cols int) int {
+	t.Helper()
+	lines := frameLines(t, p, cols, 30)
+	top := lines[2]
+	start := strings.Index(top, "╭")
+	if start < 0 {
+		return 0
+	}
+	return visibleWidth(top[start:])
+}
+
+func TestResizeMovesTheDivider(t *testing.T) {
+	p := newTestPicker([]Session{claudeTestSession()}, nil)
+	before := cardWidth(t, p, 120)
+
+	p.handle(Key{Name: "right", Ctrl: true})
+	narrower := cardWidth(t, p, 120)
+	if narrower >= before || !p.layoutChanged {
+		t.Fatalf("Ctrl+→ should widen the list: card %d -> %d", before, narrower)
+	}
+
+	p.handle(Key{Name: "left", Ctrl: true})
+	if back := cardWidth(t, p, 120); back != before {
+		t.Fatalf("Ctrl+← should undo Ctrl+→: card %d, want %d", back, before)
+	}
+}
+
+func TestResizeStopsAtBothEdges(t *testing.T) {
+	p := newTestPicker([]Session{claudeTestSession()}, nil)
+	cardWidth(t, p, 120)
+
+	for i := 0; i < 40; i++ {
+		p.handle(Key{Name: "right", Ctrl: true})
+	}
+	if got := cardWidth(t, p, 120); got < minCardCols {
+		t.Fatalf("card shrank to %d, below its minimum", got)
+	}
+	// Pressing the other way moves straight back rather than working off
+	// presses past the edge.
+	widest := p.layout.ListPercent
+	p.handle(Key{Name: "left", Ctrl: true})
+	if p.layout.ListPercent != widest-resizeStep {
+		t.Fatalf("percent %d after one step back from %d", p.layout.ListPercent, widest)
+	}
+
+	for i := 0; i < 40; i++ {
+		p.handle(Key{Name: "left", Ctrl: true})
+	}
+	lines := frameLines(t, p, 120, 30)
+	if list := strings.Index(lines[2], "╭"); list < 0 || visibleWidth(lines[2][:list]) < minListCols {
+		t.Fatalf("list shrank below its minimum: %q", lines[2])
+	}
+}
+
+func TestResizeIsANoOpWithoutTheCard(t *testing.T) {
+	p := newTestPicker([]Session{claudeTestSession()}, nil)
+	frameLines(t, p, 70, 30)
+	p.handle(Key{Name: "right", Ctrl: true})
+	if p.layoutChanged {
+		t.Fatal("resizing changed the layout while the card was hidden")
+	}
+	if strings.Contains(strings.Join(frameLines(t, p, 70, 30), ""), "resize") {
+		t.Fatal("the resize hint shows while there is nothing to resize")
+	}
+}
+
+func TestLayoutRoundTrips(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ocs", "layout.json")
+	if got := LoadLayout(path); got.ListPercent != 0 {
+		t.Fatalf("missing file gave %+v", got)
+	}
+	if err := SaveLayout(path, Layout{ListPercent: 60}); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadLayout(path); got.ListPercent != 60 {
+		t.Fatalf("got %+v", got)
+	}
+	os.WriteFile(path, []byte(`{"listPercent": 400}`), 0o644)
+	if got := LoadLayout(path); got.ListPercent != 90 {
+		t.Fatalf("an out-of-range value was not clamped: %+v", got)
 	}
 }
