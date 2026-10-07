@@ -21,11 +21,12 @@ demo:
 demo-fixture:
 	go run ./demo/fixture
 
+# DEMO=push or DEMO=pull records those instead of the picker tour.
 demo-record:
-	bash ./demo/record.sh
+	bash ./demo/record.sh $(DEMO)
 
 demo-gif:
-	bash ./demo/gif.sh
+	bash ./demo/gif.sh $(DEMO)
 
 clean:
 	rm -rf bin demo/.fixture

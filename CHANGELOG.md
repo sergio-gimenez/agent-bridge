@@ -47,6 +47,25 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Push and pull sessions between your machines.** `Ctrl+O` in the picker opens
+  a push panel in place of the card: it finds the project on the other machine,
+  shows each check as it passes, says what will be sent, and pushes on `Enter`.
+  `←`/`→` pick the machine, `Ctrl+D` the directory there, and `Ctrl+K` ends the
+  session here first when it is still open. `Ctrl+R` browses another machine's
+  sessions (`laptop ▸ desk` in the header); `Enter` pulls one and resumes it
+  here. `agb push HOST ID` and `agb pull HOST ID` do the same from the command
+  line. The session resumes as the same session on the other side. Nothing is
+  synced: the copy being sent replaces the other one. Both stop when the session
+  is open on either side, or when the receiving side's copy is bigger, since
+  that one went on without this one. Git state is a note, never a stop. See
+  [docs/push-pull.md](docs/push-pull.md).
+- `arrive` in the config: per host, a shell command run there once a pushed
+  session has landed, such as opening it in a herdr tab.
+- `agb --print --json` lists sessions as JSON, with whether each is open; it is
+  what `Ctrl+R` runs on the other machine.
+- `make demo` reaches a fake second machine, "desk", and `make demo-record
+  DEMO=push` / `DEMO=pull` record the push and pull demos.
+
 - Shared setup profiles for local skill folders and stdio/HTTP MCP definitions
   across OpenCode, Claude Code, and Codex accounts. `agb setup --example` prints
   a starter configuration, `agb plan` previews changes, and `agb sync` applies

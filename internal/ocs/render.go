@@ -226,7 +226,13 @@ func (p *picker) frame(cols, rows int) string {
 
 	list := p.renderList(listWidth, bodyRows, terms, BadgeTarget(target, p.pinned >= 0))
 	var card []string
-	if cardWidth > 0 {
+	switch {
+	case cardWidth == 0:
+	case p.panel != nil:
+		card = p.renderPanel(cardWidth, bodyRows)
+	case p.view != nil && (p.view.loading || p.view.err != "" || selected == nil):
+		card = p.remoteStatusCard(cardWidth, bodyRows)
+	default:
 		card = p.renderCard(selected, target, cardWidth, bodyRows, terms)
 	}
 
@@ -263,14 +269,31 @@ func (p *picker) renderHeader(width int, target *Account) string {
 	if p.yoloFor(target) {
 		yoloPart = alarm(" YOLO ")
 	}
+	// While browsing another machine, which one comes first: it changes what
+	// every key does.
+	machinePart := ""
+	if len(p.options.Hosts) > 0 && p.options.Self != "" {
+		machinePart = dim(p.options.Self)
+	}
+	if p.view != nil {
+		self := p.options.Self
+		if self == "" {
+			self = "here"
+		}
+		machinePart = dim(self+" ▸ ") + accent(p.view.host())
+		targetPart, yoloPart = "", ""
+		if p.view.loading {
+			count = "fetching…"
+		}
+	}
 
 	// Drop the least important parts until the header fits on one row: the
 	// target first, then the count. The yolo badge stays longest, since it
 	// decides what the agent may do.
 	for _, parts := range [][]string{
-		{dim(count), targetPart, yoloPart},
-		{dim(count), yoloPart},
-		{yoloPart},
+		{machinePart, dim(count), targetPart, yoloPart},
+		{machinePart, dim(count), yoloPart},
+		{machinePart, yoloPart},
 	} {
 		var kept []string
 		for _, part := range parts {
@@ -406,6 +429,9 @@ func (p *picker) renderCard(session *Session, target *Account, width, height int
 			session.ID,
 		}, " · ")
 		body = append(body, dim(highlightTerms(truncatePlain(meta, inner), terms)))
+		if p.view != nil {
+			body = append(body, p.remoteCardLines(session, inner)...)
+		}
 
 		if target != nil && !IsNativeTarget(session, target) {
 			route := "→ opens in " + destinationName(target) + " as a seeded fork"
@@ -455,6 +481,23 @@ func (p *picker) renderCard(session *Session, target *Account, width, height int
 type hint struct{ key, label string }
 
 func (p *picker) renderFooter(width int, target *Account, selected *Session, resizable bool) string {
+	switch {
+	case p.panel != nil:
+		return fitHints(p.panelHints(), width)
+	case p.view != nil:
+		next := p.options.Self
+		if next == "" {
+			next = "home"
+		}
+		if p.view.index+1 < len(p.view.hosts) {
+			next = p.view.hosts[p.view.index+1]
+		}
+		enter := hint{"enter", "pull & resume here"}
+		if selected != nil && selected.OpenPID > 0 {
+			enter = hint{"●", "open on " + p.view.host()}
+		}
+		return fitHints([]hint{enter, {"^r", next}, {"esc", "home"}}, width)
+	}
 	enter := "open"
 	if target != nil {
 		label := AccountLabel(target.Tool, target)
@@ -470,6 +513,12 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		if next := NextToolTarget(p.targets, selected.Source, target); next != nil {
 			hints = append(hints, hint{"tab", "→ " + AccountLabel(next.Tool, next)})
 		}
+		if selected.Source == SourceClaude || selected.Source == SourceCodex {
+			hints = append(hints, hint{"^o", "push"})
+		}
+	}
+	if len(p.options.Hosts) > 0 {
+		hints = append(hints, hint{"^r", p.options.Hosts[0]})
 	}
 	yolo := "yolo"
 	if p.yoloFor(target) {
@@ -480,8 +529,38 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		hints = append(hints, hint{"^←→", "resize"})
 	}
 
-	// Drop hints from the end until the row fits: the first ones say what
-	// Enter will do, which matters most.
+	return fitHints(hints, width)
+}
+
+func (p *picker) panelHints() []hint {
+	panel := p.panel
+	switch panel.state {
+	case panelChecking:
+		return []hint{{"esc", "back"}}
+	case panelPushing:
+		return nil
+	case panelDone, panelFailed:
+		return []hint{{"enter", "back"}}
+	}
+	var hints []hint
+	if len(panel.plan.Decision.Blockers) == 0 {
+		hints = append(hints, hint{"enter", "push"})
+	}
+	if panel.plan.LocalPID > 0 {
+		hints = append(hints, hint{"^k", "stop it here & push"})
+	}
+	if len(panel.hosts) > 1 {
+		hints = append(hints, hint{"←→", "host"})
+	}
+	if len(panel.dirs) > 1 {
+		hints = append(hints, hint{"^d", "dir"})
+	}
+	return append(hints, hint{"esc", "back"})
+}
+
+// fitHints drops hints from the end until the row fits: the first ones say
+// what Enter will do, which matters most.
+func fitHints(hints []hint, width int) string {
 	for len(hints) > 0 {
 		parts := make([]string, len(hints))
 		for i, h := range hints {

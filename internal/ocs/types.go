@@ -50,6 +50,9 @@ type Session struct {
 	// File-backed sources (Claude JSONL, Codex rollout) record where the
 	// transcript lives, so seeding never has to hunt for it again.
 	FilePath string
+	// Set only for a session listed from another machine: the process that has
+	// it open there, 0 if none.
+	OpenPID int
 
 	// SearchText lowercased once, since every keystroke searches it again.
 	searchLowered *string

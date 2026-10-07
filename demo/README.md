@@ -14,6 +14,24 @@ That builds the fixture and drops you into the real picker. Type to filter,
 and both Codex accounts, `Enter` or `Tab` to "open", which prints the command it
 *would* have run instead of running it.
 
+## A second machine
+
+Entries in `data.json` with `"machine": "desk"` go to another fixture home,
+`demo/.fixture/desk`, which stands in for a second machine. `make demo` points
+`AGB_DEMO_REMOTES` at it, so `Ctrl+O` pushes to "desk", `Ctrl+R` browses it, and
+`Enter` there pulls for real, all inside `demo/.fixture/`. Desk has stub
+`claude`, `codex` and `herdr` commands and a link to `bin/agb`, so it answers
+the way a real machine does. `AGB_MACHINE_NAME=laptop` keeps the recording
+machine's own hostname out of the header.
+
+```bash
+make demo-record DEMO=push && make demo-gif DEMO=push   # docs/push.gif
+make demo-record DEMO=pull && make demo-gif DEMO=pull   # docs/pull.gif
+```
+
+The pull demo starts a stand-in process "resuming" desk's newest session, so
+the recording shows a session that is still open there and cannot be pulled.
+
 ## What the fixture is
 
 `make demo-fixture` turns [`data.json`](data.json) into a complete fake home

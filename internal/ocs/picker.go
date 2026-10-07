@@ -3,6 +3,7 @@ package ocs
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -28,6 +29,8 @@ type PickResult struct {
 	// Set only when Ctrl+Y was used: the caller's own default applies
 	// otherwise.
 	SkipPermissions *bool
+	// The host the session was just pulled from, when it was.
+	PulledFrom string
 }
 
 type PickOptions struct {
@@ -44,6 +47,14 @@ type PickOptions struct {
 	// it.
 	Layout     Layout
 	SaveLayout func(Layout)
+
+	// For Ctrl+O (push) and Ctrl+R (browse another machine): the config, the
+	// machines to offer (moveHosts minus this one), this machine's name, and
+	// how to reach a host (nil: ssh, or AGB_DEMO_REMOTES).
+	Config Config
+	Hosts  []string
+	Self   string
+	Dial   func(host string, out io.Writer) remote
 }
 
 var ErrCancelled = errors.New("Cancelled.")
@@ -134,6 +145,20 @@ type picker struct {
 	// Width the last frame split between list and card; zero while the card
 	// is hidden, which makes resizing a no-op.
 	splitWidth int
+
+	// The push panel (Ctrl+O), or the machine being browsed (Ctrl+R) with the
+	// sessions of this one set aside meanwhile.
+	panel *pushPanel
+	view  *remoteView
+	home  []Session
+	// Background work hands its result back here to be applied on the
+	// picker's loop; nil runs it inline. spin turns the spinner.
+	async chan func()
+	spin  int
+	// Ends a process that has a session open (Ctrl+K); nil: stopProcess.
+	stop func(pid int) error
+	// Set when background work finishes the picker (a pull, then resume).
+	done *PickResult
 }
 
 // resize moves the divider between list and card by delta percent, staying
@@ -224,6 +249,14 @@ func (p *picker) refilter() {
 // the picker should keep going.
 func (p *picker) handle(key Key) (*PickResult, error) {
 	selected := p.selected()
+	if p.panel != nil {
+		return p.handlePanel(key)
+	}
+	if p.view != nil {
+		if result, handled := p.handleBrowsing(key); handled {
+			return result, nil
+		}
+	}
 
 	switch {
 	case key.Ctrl && key.Name == "c", key.Name == "escape":
@@ -248,6 +281,13 @@ func (p *picker) handle(key Key) (*PickResult, error) {
 			result := p.finish(*selected, p.currentTarget(), ModeFork)
 			return &result, nil
 		}
+	case key.Ctrl && key.Name == "o":
+		// Ctrl+M would be the natural key, but terminals send it as Enter.
+		if selected != nil && (selected.Source == SourceClaude || selected.Source == SourceCodex) {
+			p.openPanel(*selected)
+		}
+	case key.Ctrl && key.Name == "r":
+		p.cycleMachine()
 	case key.Name == "backtab":
 		p.cycleTarget(-1)
 	case key.Name == "tab":
@@ -324,20 +364,10 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 	signal.Notify(resized, syscall.SIGWINCH)
 	defer signal.Stop(resized)
 
-	input := make(chan []byte)
-	go func() {
-		buffer := make([]byte, 4096)
-		for {
-			n, err := os.Stdin.Read(buffer)
-			if err != nil {
-				close(input)
-				return
-			}
-			chunk := make([]byte, n)
-			copy(chunk, buffer[:n])
-			input <- chunk
-		}
-	}()
+	input, stopInput := readKeys(in)
+	// Stop reading before handing the terminal back: whatever runs next (the
+	// tool, or agb push's prompts) gets every key typed from then on.
+	defer stopInput()
 
 	// apply runs every key in data. It reports whether the picker is done.
 	apply := func(data []byte) (bool, PickResult, error) {
@@ -359,6 +389,10 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 	var pending []byte
 	var escapeTimeout <-chan time.Time
 
+	p.async = make(chan func())
+	spin := time.NewTicker(90 * time.Millisecond)
+	defer spin.Stop()
+
 	draw()
 	if options.AfterFirstDraw != nil {
 		options.AfterFirstDraw()
@@ -368,6 +402,20 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 		select {
 		case <-resized:
 			draw()
+			continue
+		case apply := <-p.async:
+			apply()
+			if p.done != nil {
+				restore()
+				return *p.done, nil
+			}
+			draw()
+			continue
+		case <-spin.C:
+			if p.busy() {
+				p.spin++
+				draw()
+			}
 			continue
 		case <-escapeTimeout:
 			data, pending, escapeTimeout = pending, nil, nil

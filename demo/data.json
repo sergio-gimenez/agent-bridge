@@ -219,5 +219,38 @@
       ["user", "Does that cover signing keys too?"],
       ["assistant", "Included them in the same files, so work commits sign with the work key automatically. Verified by committing in both trees and checking git log --show-signature."]
     ]
+  },
+  {
+    "tool": "cc2",
+    "machine": "desk",
+    "ago": 6,
+    "dir": "~/code/pixel-forge",
+    "title": "Overnight benchmark sweep across encoder presets",
+    "turns": [
+      ["user", "Run the full benchmark matrix across every encoder preset overnight and write a summary table to bench/RESULTS.md."],
+      ["assistant", "Started the sweep: 6 presets x 4 image sets, 3 runs each. First preset done, median 41 ms per frame. I'll keep going and update RESULTS.md as each preset finishes."]
+    ]
+  },
+  {
+    "tool": "cc1",
+    "machine": "desk",
+    "ago": 52,
+    "dir": "~/code/nebula-api",
+    "title": "Move CI runners to the new cluster",
+    "turns": [
+      ["user", "Migrate the CI runners to the new cluster and keep the old ones as fallback until a week of green builds."],
+      ["assistant", "Runners registered on the new cluster with the same labels. Both pools take jobs now; the old pool drains once the new one has a clean week."]
+    ]
+  },
+  {
+    "tool": "cx1",
+    "machine": "desk",
+    "ago": 190,
+    "dir": "~/code/aurora-web",
+    "title": "Bisect the bundle size regression",
+    "turns": [
+      ["user", "The main bundle grew 180 KB since last month. Bisect it and tell me which commit did it."],
+      ["assistant", "Bisected over 64 commits: the jump is a5c19e0, which imports the whole icon set instead of the three icons it uses."]
+    ]
   }
 ]
