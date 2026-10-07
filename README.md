@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>Your sessions and shared agent setup, in one place.</b><br>
-  Search every OpenCode, Claude Code and Codex account, carry conversations across tools, and synchronize skills and MCPs.
+  Search every OpenCode, Claude Code and Codex account, carry conversations across tools and machines, and synchronize skills and MCPs.
 </p>
 
 <p align="center">
@@ -28,6 +28,10 @@ resume list for every tool and every account.
 AgentBridge (`agb`) reads those stores directly and puts everything in one
 list, newest first, searchable by the words you typed rather than only the
 title a tool gave it.
+
+It also moves a session between your machines: push it to an always-on box
+before you leave, follow it from your phone, and pull it back later as the same
+session. See [pushing and pulling](#pushing-and-pulling-a-session-between-machines).
 
 `agb` also shares local skills and MCP definitions across tools and accounts
 through user-defined profiles. Start with `agb setup --example`, review with
@@ -63,8 +67,9 @@ make demo
 
 That builds a synthetic history (two Claude accounts, two Codex accounts, an
 OpenCode store, four invented projects) and runs the real picker against it with
-opening stubbed out. Nothing of yours is read and nothing gets launched. Details
-in [`demo/README.md`](demo/README.md).
+opening stubbed out. A second fake machine, "desk", is there to try `Ctrl+O`
+(push) and `Ctrl+R` (browse and pull) on. Nothing of yours is read and nothing
+gets launched. Details in [`demo/README.md`](demo/README.md).
 
 ## Keys
 
@@ -79,6 +84,8 @@ in [`demo/README.md`](demo/README.md).
 | `Shift+Tab` | Cycle the target backwards |
 | `Tab` | Open in the *next tool* right away, as a transcript-seeded fork |
 | `Ctrl+Y` | Toggle yolo: bypass permission checks for this launch only |
+| `Ctrl+O` | Push the session to another machine ([push and pull](docs/push-pull.md)) |
+| `Ctrl+R` | Browse another machine's sessions; `Enter` there pulls one and resumes it here |
 | `Ctrl+←` `Ctrl+→` | Move the divider between the list and the card; the width is remembered |
 | `Esc` `Ctrl+C` | Cancel |
 
@@ -171,81 +178,31 @@ checkpoints cannot be reused as readable summaries across tools. Handoff files
 remain until you remove them; deleting them removes that recovery path from
 sessions that reference them. Dry runs also prepare these files.
 
-## Moving a session to another machine
+## Pushing and pulling a session between machines
 
-`agb move` hands a Claude Code or Codex session to another machine of yours, so
-it continues there as the same session, not as a seeded fork. Between two
-machines the id stays valid: the transcript goes to the same path under the
-same account, and the tool resumes it natively.
+![Pushing a session to desk from the picker](docs/push.gif)
 
-```console
-$ agb move 0c5ddcb6 --to desk --dry-run
-Move CC2 0c5ddcb6-… to desk
-copy     ~/.claude-cc2/projects/-home-sergio-phd/0c5ddcb6-….jsonl
-copy     ~/.claude-cc2/projects/-home-sergio-phd/0c5ddcb6-…        (tool results, subagents)
-copy     ~/.cache/agentbridge/handoffs/773c….txt                (a handoff it refers to)
-merge    ~/.claude-cc2/projects/-home-sergio-phd/memory (newer files there are kept)
-Stop: the session is open here (pid 186198); quit it first (--force to move anyway)
+A Claude Code or Codex session lives on one machine at a time. `Ctrl+O` in the
+picker (or `agb push desk ID`) hands it to another of your machines, and
+`Ctrl+R` (or `agb pull desk ID`) browses that machine and brings one back. On
+the other side it resumes as the same session, not as a seeded fork.
+
+```
+ laptop                                   desk
+┌────────────┐   push  Ctrl+O  ───────►  ┌────────────┐
+│ your list  │                           │ herdr tab  │──► phone
+│            │   ◄───  Ctrl+R ↵  pull    │            │
+└────────────┘                           └────────────┘
+ stops only if it is open on either side, or the other copy is bigger
 ```
 
-In the picker, `Ctrl+O` on a session does the same interactively (Ctrl+M
-would read better, but terminals send it as Enter), and so does `agb move
-SESSION` without `--to`:
+Neither is a sync. The copy being sent replaces the other one. Code travels
+through git, so a dirty checkout gets a note, never a stop. An `arrive` hook per
+host can start the session once it lands, for example in a
+[herdr](https://herdr.dev) tab where your phone can follow it.
 
-```console
-Move to which machine?
-  1) desk
-  s) pick from ~/.ssh/config (82 hosts)
-  or type any ssh host
-Host [desk]:
-Looking for the project on desk...
-Directory on desk [~/phd]:
-```
-
-The first hosts come from `moveHosts` in the config (`"moveHosts": ["desk"]`),
-minus the machine you are on, so one config serves both. For the directory it
-offers the same path when it exists there, otherwise any checkout of the same
-git origin up to four levels below home, otherwise it asks. Then it shows the
-checks and what it will copy, asks before moving, and asks whether to resume
-there right away.
-
-`--to` takes an ssh host, an alias from `~/.ssh/config`, and both machines need
-the same home path. The project may sit in another directory there
-(`--to desk` takes the same path; the dialog lets you choose another): for
-Claude the transcript then goes to that directory's project folder, since
-Claude files sessions by directory. One ssh probe checks the other side first,
-and the move stops when:
-
-- the session directory, the tool, or the same home path is missing there;
-- the copy already there is not an older state of this one: it continued there,
-  so move it back from there instead (transcripts only grow, so an older state
-  is a prefix);
-- the session is open, here or there. Claude Code records each running session
-  in `<account>/sessions/<pid>.json` with the process start time (so a reused
-  pid or a record left by a crash does not count), and any tool counts as open
-  while a process holds the transcript file. Quit it and move right away. Only
-  where `/proc` is missing does a transcript written in the last two minutes
-  stand in for this check. Why it matters: an open session keeps appending to
-  the file being copied, so the copy would miss its last turns, and carrying on
-  in both places forks one id into two conversations;
-- the project has uncommitted changes to tracked files, or a HEAD that is on no
-  remote branch. Code moves through git, never through `agb move`;
-- the agb config or a skill source differs there.
-
-`--force` overrides the last three checks except setup drift. For that,
-`--sync-setup` makes the config and skill sources there equal to this
-machine's and runs `agb sync` there, and `--ignore-drift` moves anyway.
-
-What goes along: the transcript and, for Claude, its sibling directory; agb
-handoffs and other transcripts that it names by path; the account's
-`settings.json` when the other machine has none; and the project memory, merged
-with `rsync --update` so a newer file there is kept. A notice tells you when the
-checkout there is at a different commit or when the account looks logged out.
-Background tasks the session started do not move, so ask it to re-check them.
-
-`--launch` resumes it there right away over `ssh -t`. Otherwise `agb move`
-prints the command. OpenCode keeps sessions in a database, so it is not
-supported yet.
+Setup, the checks, what travels, and troubleshooting:
+**[docs/push-pull.md](docs/push-pull.md)**.
 
 ## Sharing memory between tools
 
@@ -432,7 +389,15 @@ The setting follows the *target*, not the session: forking a `cc1` session into
 | `--dangerous`, `--skip-permissions`, `--yolo` | Bypass permission checks |
 | `--safe`, `--no-skip-permissions` | Force permission checks on |
 | `--rescan` | Ignore the session cache and rebuild it |
+| `--print --json` | List sessions as JSON, with whether each is open (what `Ctrl+R` reads from another machine) |
 | `--help`, `-h` | Usage |
+
+| Command | Effect |
+| --- | --- |
+| `agb push HOST ID` | Push a session to another machine ([push and pull](docs/push-pull.md)) |
+| `agb push ID` | The same, asking for the host and directory |
+| `agb pull HOST ID` | Pull a session from another machine |
+| `agb setup`, `agb plan`, `agb sync` | Shared skills and MCPs ([setup](docs/setup.md)) |
 
 ### Dry run
 
@@ -498,6 +463,7 @@ safe to delete, and `agb --rescan` rebuilds it.
 go run ./cmd/agb            # run the picker from source
 go run ./cmd/agb --print    # list recent sessions, no TUI
 make demo                   # picker against synthetic sessions, opening stubbed out
+make demo-record DEMO=push  # re-record a demo (DEMO= empty, push or pull), then make demo-gif
 make vet test build
 ```
 

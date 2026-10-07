@@ -47,22 +47,24 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `agb move SESSION --to HOST` hands a Claude Code or Codex session to another
-  machine, where it resumes as the same session. One ssh probe checks first:
-  same home path, directory, tool and login there; a copy there that continued
-  on its own (it is not a prefix of this one); a session open here or there
-  (Claude Code's own record of running sessions, or a process holding the
-  transcript; no waiting);
-  uncommitted or unpushed work; and drift in the agb config or skill sources,
-  which `--sync-setup` resolves in this machine's favour. It copies the
-  transcript, its sibling directory, the handoffs and transcripts it refers to,
-  and merges the project memory without overwriting newer files. `--dry-run`
-  checks and lists only; `--launch` resumes there over `ssh -t`.
-- `Ctrl+O` in the picker, or `agb move SESSION` without `--to`, asks where to:
-  a host from `moveHosts` in the config, from `~/.ssh/config`, or typed; then a
-  directory there (the same path, a checkout of the same git origin, or one you
-  type). A Claude session moved to another directory lands in that directory's
-  project folder there.
+- **Push and pull sessions between your machines.** `Ctrl+O` in the picker opens
+  a push panel in place of the card: it finds the project on the other machine,
+  shows each check as it passes, says what will be sent, and pushes on `Enter`.
+  `←`/`→` pick the machine, `Ctrl+D` the directory there, and `Ctrl+K` ends the
+  session here first when it is still open. `Ctrl+R` browses another machine's
+  sessions (`laptop ▸ desk` in the header); `Enter` pulls one and resumes it
+  here. `agb push HOST ID` and `agb pull HOST ID` do the same from the command
+  line. The session resumes as the same session on the other side. Nothing is
+  synced: the copy being sent replaces the other one. Both stop when the session
+  is open on either side, or when the receiving side's copy is bigger, since
+  that one went on without this one. Git state is a note, never a stop. See
+  [docs/push-pull.md](docs/push-pull.md).
+- `arrive` in the config: per host, a shell command run there once a pushed
+  session has landed, such as opening it in a herdr tab.
+- `agb --print --json` lists sessions as JSON, with whether each is open; it is
+  what `Ctrl+R` runs on the other machine.
+- `make demo` reaches a fake second machine, "desk", and `make demo-record
+  DEMO=push` / `DEMO=pull` record the push and pull demos.
 
 - Shared setup profiles for local skill folders and stdio/HTTP MCP definitions
   across OpenCode, Claude Code, and Codex accounts. `agb setup --example` prints
