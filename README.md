@@ -188,9 +188,33 @@ merge    ~/.claude-cc2/projects/-home-sergio-phd/memory (newer files there are k
 Stop: the session was written 17s ago and is probably still open here; exit it first
 ```
 
+In the picker, `Ctrl+O` on a session does the same interactively (Ctrl+M
+would read better, but terminals send it as Enter), and so does `agb move
+SESSION` without `--to`:
+
+```console
+Move to which machine?
+  1) desk
+  s) pick from ~/.ssh/config (82 hosts)
+  or type any ssh host
+Host [desk]:
+Looking for the project on desk...
+Directory on desk [~/phd]:
+```
+
+The first hosts come from `moveHosts` in the config (`"moveHosts": ["desk"]`),
+minus the machine you are on, so one config serves both. For the directory it
+offers the same path when it exists there, otherwise any checkout of the same
+git origin up to four levels below home, otherwise it asks. Then it shows the
+checks and what it will copy, asks before moving, and asks whether to resume
+there right away.
+
 `--to` takes an ssh host, an alias from `~/.ssh/config`, and both machines need
-the same home path. One ssh probe checks the other side first, and the move
-stops when:
+the same home path. The project may sit in another directory there
+(`--to desk` takes the same path; the dialog lets you choose another): for
+Claude the transcript then goes to that directory's project folder, since
+Claude files sessions by directory. One ssh probe checks the other side first,
+and the move stops when:
 
 - the session directory, the tool, or the same home path is missing there;
 - the copy already there is not an older state of this one: it continued there,

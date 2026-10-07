@@ -2,6 +2,7 @@ package ocs
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -193,6 +194,11 @@ func (l *loopback) Copy(paths []string, flags ...string) error {
 	return nil
 }
 
+func (l *loopback) CopyTo(src, dst string, flags ...string) error {
+	l.copies = append(l.copies, append(append([]string{}, flags...), src+" -> "+dst))
+	return nil
+}
+
 func (l *loopback) Run(command string) error { l.runs = append(l.runs, command); return nil }
 
 func TestMoveSession(t *testing.T) {
@@ -312,5 +318,68 @@ func TestCopyKeepsBelowHome(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dest); len(entries) != 1 || entries[0].Name() != ".claude-cc2" {
 		t.Fatalf("copied more than the path below home: %v", entries)
+	}
+}
+
+func TestClaudeProjectKey(t *testing.T) {
+	for dir, want := range map[string]string{
+		"/home/sergio/phd":                       "-home-sergio-phd",
+		"/home/sergio/i2cat/GÉANT":               "-home-sergio-i2cat-G-ANT",
+		"/home/sergio/mystuff/sergiogimenez.com": "-home-sergio-mystuff-sergiogimenez-com",
+		"/home/u/a_b c":                          "-home-u-a-b-c",
+	} {
+		if got := claudeProjectKey(dir); got != want {
+			t.Errorf("%s: got %s, want %s", dir, got, want)
+		}
+	}
+}
+
+// A different directory there moves the transcript, its folder and memory into
+// that directory's project folder, and resumes there.
+func TestMoveSessionToAnotherDirectory(t *testing.T) {
+	if _, err := exec.LookPath("sha256sum"); err != nil {
+		t.Skip("sha256sum not available")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("AGB_CACHE_PATH", filepath.Join(home, ".cache", "agentbridge", "index.gob"))
+	t.Setenv("AGB_DRY_RUN", "")
+	account := Account{Tool: SourceClaude, Name: "cc2", Home: filepath.Join(home, ".claude-cc2")}
+	here, there := filepath.Join(home, "phd"), filepath.Join(home, "src", "phd")
+	for _, dir := range []string{here, there} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	projects := filepath.Join(account.Home, "projects")
+	transcriptPath := filepath.Join(projects, claudeProjectKey(here), "s1.jsonl")
+	writeFile(t, transcriptPath, "{}\n")
+	writeFile(t, filepath.Join(projects, claudeProjectKey(here), "s1", "tool-results", "r.txt"), "r")
+	writeFile(t, filepath.Join(projects, claudeProjectKey(here), "memory", "MEMORY.md"), "- fact")
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(transcriptPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	session := Session{ID: "s1", Source: SourceClaude, Directory: here, Account: &account, FilePath: transcriptPath}
+	link := &loopback{patch: map[string]string{"tool": "yes", "login": "yes"}}
+	var out bytes.Buffer
+	code, err := moveSession(session, Config{ClaudeAccounts: []Account{account}}, filepath.Join(home, "absent.json"),
+		MoveOptions{Host: "desk", RemoteDir: there}, link, &out)
+	if code != 0 || err != nil {
+		t.Fatalf("%d %v\n%s", code, err, out.String())
+	}
+	dest := filepath.Join(projects, claudeProjectKey(there))
+	got := fmt.Sprint(link.copies)
+	for _, want := range []string{
+		transcriptPath + " -> " + filepath.Join(dest, "s1.jsonl"),
+		filepath.Join(projects, claudeProjectKey(here), "s1") + "/ -> " + filepath.Join(dest, "s1") + "/",
+		"--update " + filepath.Join(projects, claudeProjectKey(here), "memory") + "/ -> " + filepath.Join(dest, "memory") + "/",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("copies lack %q:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(out.String(), "there in ~/src/phd") || !strings.Contains(out.String(), there+"'\\'' && CLAUDE_CONFIG_DIR") {
+		t.Errorf("output:\n%s", out.String())
 	}
 }

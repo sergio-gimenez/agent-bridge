@@ -56,6 +56,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   transcript, its sibling directory, the handoffs and transcripts it refers to,
   and merges the project memory without overwriting newer files. `--dry-run`
   checks and lists only; `--launch` resumes there over `ssh -t`.
+- `Ctrl+O` in the picker, or `agb move SESSION` without `--to`, asks where to:
+  a host from `moveHosts` in the config, from `~/.ssh/config`, or typed; then a
+  directory there (the same path, a checkout of the same git origin, or one you
+  type). A Claude session moved to another directory lands in that directory's
+  project folder there.
 
 - Shared setup profiles for local skill folders and stdio/HTTP MCP definitions
   across OpenCode, Claude Code, and Codex accounts. `agb setup --example` prints

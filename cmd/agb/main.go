@@ -103,6 +103,11 @@ func run() (int, error) {
 	}
 
 	<-saved
+	if picked.Mode == ocs.ModeMove {
+		// Leave the alternate screen's content behind a clean line.
+		fmt.Fprintln(os.Stdout)
+		return ocs.RunMoveDialog(picked.Session, config, os.Stdin, os.Stdout)
+	}
 	skip := skipFor(picked.Target)
 	if picked.SkipPermissions != nil {
 		skip = *picked.SkipPermissions

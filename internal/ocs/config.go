@@ -20,6 +20,8 @@ type Config struct {
 	DefaultClaudeAccount string
 	CodexAccounts        []Account
 	DefaultCodexAccount  string
+	// Hosts the picker offers first for Ctrl+O (move to another machine).
+	MoveHosts []string
 }
 
 // Each tool names its isolated home with its own environment variable, so each
@@ -145,6 +147,15 @@ func ParseConfig(raw []byte) (Config, error) {
 	opencode := OpencodeAccount
 	opencode.SkipPermissions = skipPermissionsOf(parsed["opencode"])
 
+	var moveHosts []string
+	if list, ok := parsed["moveHosts"].([]any); ok {
+		for _, entry := range list {
+			if host, ok := entry.(string); ok && strings.TrimSpace(host) != "" {
+				moveHosts = append(moveHosts, strings.TrimSpace(host))
+			}
+		}
+	}
+
 	return Config{
 		Setup:                setup,
 		SkipPermissions:      skip,
@@ -153,6 +164,7 @@ func ParseConfig(raw []byte) (Config, error) {
 		DefaultClaudeAccount: pickDefault(claude, parsed["defaultClaudeAccount"]),
 		CodexAccounts:        codex,
 		DefaultCodexAccount:  pickDefault(codex, parsed["defaultCodexAccount"]),
+		MoveHosts:            moveHosts,
 	}, nil
 }
 

@@ -470,6 +470,9 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		if next := NextToolTarget(p.targets, selected.Source, target); next != nil {
 			hints = append(hints, hint{"tab", "→ " + AccountLabel(next.Tool, next)})
 		}
+		if selected.Source == SourceClaude || selected.Source == SourceCodex {
+			hints = append(hints, hint{"^o", "move"})
+		}
 	}
 	yolo := "yolo"
 	if p.yoloFor(target) {

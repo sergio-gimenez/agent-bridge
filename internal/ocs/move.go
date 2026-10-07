@@ -42,6 +42,10 @@ type MoveOptions struct {
 	SyncSetup   bool
 	IgnoreDrift bool
 	Launch      bool
+	// The session's directory on the other machine. Empty means the same path.
+	// For Claude a different path also changes the project folder the
+	// transcript goes to, since Claude keys sessions by directory.
+	RemoteDir string
 }
 
 // remote is the other machine; tests replace it.
@@ -50,6 +54,8 @@ type remote interface {
 	Probe(script string) (string, error)
 	// Copy puts each local absolute path at the same absolute path there.
 	Copy(paths []string, extra ...string) error
+	// CopyTo puts one local path at another path there, creating its parents.
+	CopyTo(src, dst string, extra ...string) error
 	// Run runs one command there, attached to this terminal.
 	Run(command string) error
 }
@@ -80,6 +86,14 @@ func (r sshRemote) Copy(paths []string, extra ...string) error {
 	args = append(args, "--")
 	args = append(args, anchored...)
 	args = append(args, r.host+":"+home+"/")
+	cmd := exec.Command("rsync", args...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
+func (r sshRemote) CopyTo(src, dst string, extra ...string) error {
+	args := append([]string{"-a", "--mkpath"}, extra...)
+	args = append(args, "--", src, r.host+":"+dst)
 	cmd := exec.Command("rsync", args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
@@ -258,11 +272,28 @@ func isDir(path string) bool {
 	return err == nil && info.IsDir()
 }
 
+// claudeProjectKey is the folder name Claude Code files a directory's
+// sessions under: every character that is not an ASCII letter or digit
+// becomes '-' (/home/u/i2cat/GÉANT -> -home-u-i2cat-G-ANT).
+func claudeProjectKey(dir string) string {
+	var key strings.Builder
+	for _, r := range dir {
+		if r < 128 && (r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			key.WriteRune(r)
+		} else {
+			key.WriteByte('-')
+		}
+	}
+	return key.String()
+}
+
 // moveFacts is everything the decision needs, gathered first so the decision
 // itself is a pure function.
 type moveFacts struct {
 	Session       Session
 	Home          string // the account home: CLAUDE_CONFIG_DIR or CODEX_HOME
+	RemoteDir     string // the session directory there
+	RemoteFile    string // where the transcript goes there
 	Transcript    []byte
 	WrittenAgo    time.Duration
 	GitRepo       bool
@@ -292,7 +323,7 @@ func decideMove(f moveFacts, opts MoveOptions) moveDecision {
 		block("HOME there is %q, here %q: agb move needs the same home path on both machines", r["home"], home)
 	}
 	if r["dir"] != "yes" {
-		block("the session directory does not exist there: %s (clone or create it first)", ShortenHome(f.Session.Directory))
+		block("the session directory does not exist there: %s (clone or create it first)", ShortenHome(f.RemoteDir))
 	}
 	if r["tool"] != "yes" {
 		block("%s is not installed there", ToolName(f.Session.Source))
@@ -410,15 +441,15 @@ func probeScript(f moveFacts, sources map[string]string, toolBinary, loginFile s
 yes_if() { if "$@" >/dev/null 2>&1; then echo yes; else echo no; fi; }
 kv home "$HOME"
 `)
-	fmt.Fprintf(&s, "kv dir \"$(yes_if test -d %s)\"\n", shellQuote(f.Session.Directory))
+	fmt.Fprintf(&s, "kv dir \"$(yes_if test -d %s)\"\n", shellQuote(f.RemoteDir))
 	fmt.Fprintf(&s, "kv tool \"$(yes_if command -v %s)\"\n", toolBinary)
 	fmt.Fprintf(&s, "kv agb \"$(yes_if command -v agb)\"\n")
 	fmt.Fprintf(&s, "kv login \"$(yes_if test -s %s)\"\n", shellQuote(loginFile))
-	fmt.Fprintf(&s, "if [ -f %[1]s ]; then kv session_size \"$(stat -c %%s %[1]s)\"; kv session_sha \"$(sha256sum < %[1]s | cut -c1-64)\"; fi\n", shellQuote(f.Session.FilePath))
+	fmt.Fprintf(&s, "if [ -f %[1]s ]; then kv session_size \"$(stat -c %%s %[1]s)\"; kv session_sha \"$(sha256sum < %[1]s | cut -c1-64)\"; fi\n", shellQuote(f.RemoteFile))
 	settings := filepath.Join(f.Home, "settings.json")
 	fmt.Fprintf(&s, "if [ -f %[1]s ]; then kv settings \"$(sha256sum < %[1]s | cut -c1-64)\"; else kv settings missing; fi\n", shellQuote(settings))
 	if f.GitRepo {
-		fmt.Fprintf(&s, "kv git_head \"$(git -C %s rev-parse HEAD 2>/dev/null)\"\n", shellQuote(f.Session.Directory))
+		fmt.Fprintf(&s, "kv git_head \"$(git -C %s rev-parse HEAD 2>/dev/null)\"\n", shellQuote(f.RemoteDir))
 	}
 	for _, key := range sortedKeys(sources) {
 		path := shellQuote(sources[key])
@@ -489,8 +520,9 @@ func RunMoveCommand(argv []string, out io.Writer) (int, error) {
 		positional = append(positional, flags.Arg(0))
 		argv = flags.Args()[1:]
 	}
-	if len(positional) != 1 || opts.Host == "" {
-		return 2, fmt.Errorf("usage: agb move SESSION-ID --to HOST [--dry-run] [--force] [--sync-setup|--ignore-drift] [--launch]")
+	if len(positional) != 1 {
+		return 2, fmt.Errorf("usage: agb move SESSION-ID [--to HOST] [--dry-run] [--force] [--sync-setup|--ignore-drift] [--launch]\n" +
+			"without --to it asks for the host and the directory there")
 	}
 	opts.ID = positional[0]
 	opts.DryRun = opts.DryRun || dryRunEnabled()
@@ -500,10 +532,13 @@ func RunMoveCommand(argv []string, out io.Writer) (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	if opts.Host == "" {
+		return RunMoveDialog(session, config, os.Stdin, out)
+	}
 	return moveSession(session, config, ConfigPath(), opts, sshRemote{opts.Host}, out)
 }
 
-func moveSession(session Session, config Config, configPath string, opts MoveOptions, there remote, out io.Writer) (int, error) {
+func moveSession(session Session, config Config, configPath string, opts MoveOptions, link remote, out io.Writer) (int, error) {
 	var home, toolBinary, loginFile string
 	switch session.Source {
 	case SourceClaude:
@@ -527,7 +562,19 @@ func moveSession(session Session, config Config, configPath string, opts MoveOpt
 	if err != nil {
 		return 1, err
 	}
-	facts := moveFacts{Session: session, Home: home, Transcript: transcript, WrittenAgo: time.Since(info.ModTime())}
+	remoteDir := opts.RemoteDir
+	if remoteDir == "" {
+		remoteDir = session.Directory
+	}
+	// Only a directory chosen for the other side relocates the transcript; a
+	// project folder whose name does not follow claudeProjectKey stays as it is.
+	remoteFile := session.FilePath
+	if session.Source == SourceClaude && remoteDir != session.Directory {
+		remoteFile = filepath.Join(filepath.Dir(filepath.Dir(session.FilePath)), claudeProjectKey(remoteDir), filepath.Base(session.FilePath))
+	}
+	relocated := remoteFile != session.FilePath
+	facts := moveFacts{Session: session, Home: home, Transcript: transcript, WrittenAgo: time.Since(info.ModTime()),
+		RemoteDir: remoteDir, RemoteFile: remoteFile}
 	if inside, err := gitOutput(session.Directory, "rev-parse", "--is-inside-work-tree"); err == nil && inside == "true" {
 		facts.GitRepo = true
 		dirty, _ := gitOutput(session.Directory, "status", "--porcelain", "--untracked-files=no")
@@ -540,7 +587,7 @@ func moveSession(session Session, config Config, configPath string, opts MoveOpt
 	sources := setupSources(config, configPath)
 	facts.LocalSetup = localSetupHashes(sources)
 
-	probe, err := there.Probe(probeScript(facts, sources, toolBinary, loginFile))
+	probe, err := link.Probe(probeScript(facts, sources, toolBinary, loginFile))
 	if err != nil {
 		return 1, err
 	}
@@ -554,9 +601,21 @@ func moveSession(session Session, config Config, configPath string, opts MoveOpt
 		transcriptRoots = append(transcriptRoots, claudeProjectsPath(&account))
 	}
 	transcriptRoots = append(transcriptRoots, claudeProjectsPath(nil))
-	files := []string{session.FilePath}
-	if dir := strings.TrimSuffix(session.FilePath, jsonlExt); session.Source == SourceClaude && isDir(dir) {
-		files = append(files, dir)
+	// What changes project folder there goes by CopyTo; the rest keeps its path.
+	type relocation struct{ from, to string }
+	var moved []relocation
+	var files []string
+	sibling := strings.TrimSuffix(session.FilePath, jsonlExt)
+	if relocated {
+		moved = append(moved, relocation{session.FilePath, remoteFile})
+		if isDir(sibling) {
+			moved = append(moved, relocation{sibling + "/", strings.TrimSuffix(remoteFile, jsonlExt) + "/"})
+		}
+	} else {
+		files = append(files, session.FilePath)
+		if session.Source == SourceClaude && isDir(sibling) {
+			files = append(files, sibling)
+		}
 	}
 	files = append(files, referencedFiles(transcript, session.FilePath, filepath.Join(filepath.Dir(CachePath()), "handoffs"), transcriptRoots)...)
 	if decision.CopySettings {
@@ -570,12 +629,23 @@ func moveSession(session Session, config Config, configPath string, opts MoveOpt
 		}
 	}
 
-	fmt.Fprintf(out, "Move %s %s to %s\n  %s\n  in %s\n", AccountLabel(session.Source, session.Account), session.ID, opts.Host, session.Title, ShortenHome(session.Directory))
+	memoryThere := memory
+	if relocated && memory != "" {
+		memoryThere = filepath.Join(filepath.Dir(remoteFile), "memory")
+	}
+	fmt.Fprintf(out, "Move %s %s to %s\n  %s\n  in %s", AccountLabel(session.Source, session.Account), session.ID, opts.Host, session.Title, ShortenHome(session.Directory))
+	if remoteDir != session.Directory {
+		fmt.Fprintf(out, ", there in %s", ShortenHome(remoteDir))
+	}
+	fmt.Fprintln(out)
+	for _, m := range moved {
+		fmt.Fprintf(out, "copy     %s -> %s\n", ShortenHome(strings.TrimSuffix(m.from, "/")), ShortenHome(strings.TrimSuffix(m.to, "/")))
+	}
 	for _, path := range files {
 		fmt.Fprintf(out, "copy     %s\n", ShortenHome(path))
 	}
 	if memory != "" {
-		fmt.Fprintf(out, "merge    %s (newer files there are kept)\n", ShortenHome(memory))
+		fmt.Fprintf(out, "merge    %s (newer files there are kept)\n", ShortenHome(memoryThere))
 	}
 	if opts.SyncSetup {
 		for _, key := range decision.SetupDrift {
@@ -592,7 +662,9 @@ func moveSession(session Session, config Config, configPath string, opts MoveOpt
 		return 2, fmt.Errorf("not moved")
 	}
 
-	resume := resumeCommand(session, home)
+	thereSession := session
+	thereSession.Directory = remoteDir
+	resume := resumeCommand(thereSession, home)
 	if opts.DryRun {
 		fmt.Fprintf(out, "Dry run: nothing copied. There, it would resume with:\n  %s\n", resume)
 		return 0, nil
@@ -602,24 +674,35 @@ func moveSession(session Session, config Config, configPath string, opts MoveOpt
 		for _, key := range decision.SetupDrift {
 			path := sources[key]
 			if key == "config" {
-				err = there.Copy([]string{path})
+				err = link.Copy([]string{path})
 			} else {
 				// A skill directory is replaced as a whole, so files removed here go there too.
-				err = there.Copy([]string{path + "/"}, "--delete")
+				err = link.Copy([]string{path + "/"}, "--delete")
 			}
 			if err != nil {
 				return 1, fmt.Errorf("copying %s: %w", key, err)
 			}
 		}
-		if err := there.Run("agb sync && agb sync --check >/dev/null"); err != nil {
+		if err := link.Run("agb sync && agb sync --check >/dev/null"); err != nil {
 			return 1, fmt.Errorf("agb sync there: %w", err)
 		}
 	}
-	if err := there.Copy(files); err != nil {
+	for _, m := range moved {
+		if err := link.CopyTo(m.from, m.to); err != nil {
+			return 1, fmt.Errorf("copying the session: %w", err)
+		}
+	}
+	if err := link.Copy(files); err != nil {
 		return 1, fmt.Errorf("copying the session: %w", err)
 	}
 	if memory != "" {
-		if err := there.Copy([]string{memory}, "--update"); err != nil {
+		var err error
+		if relocated {
+			err = link.CopyTo(memory+"/", memoryThere+"/", "--update")
+		} else {
+			err = link.Copy([]string{memory}, "--update")
+		}
+		if err != nil {
 			return 1, fmt.Errorf("copying memory: %w", err)
 		}
 	}

@@ -19,6 +19,9 @@ type PickMode string
 const (
 	ModeResume PickMode = "resume"
 	ModeFork   PickMode = "fork"
+	// ModeMove hands the session to another machine (agb move); the caller
+	// asks where.
+	ModeMove PickMode = "move"
 )
 
 type PickResult struct {
@@ -247,6 +250,11 @@ func (p *picker) handle(key Key) (*PickResult, error) {
 		if selected != nil {
 			result := p.finish(*selected, p.currentTarget(), ModeFork)
 			return &result, nil
+		}
+	case key.Ctrl && key.Name == "o":
+		// Ctrl+M would be the natural key, but terminals send it as Enter.
+		if selected != nil && (selected.Source == SourceClaude || selected.Source == SourceCodex) {
+			return &PickResult{Session: *selected, Mode: ModeMove}, nil
 		}
 	case key.Name == "backtab":
 		p.cycleTarget(-1)
