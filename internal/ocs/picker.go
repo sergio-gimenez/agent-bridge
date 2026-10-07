@@ -332,20 +332,10 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 	signal.Notify(resized, syscall.SIGWINCH)
 	defer signal.Stop(resized)
 
-	input := make(chan []byte)
-	go func() {
-		buffer := make([]byte, 4096)
-		for {
-			n, err := os.Stdin.Read(buffer)
-			if err != nil {
-				close(input)
-				return
-			}
-			chunk := make([]byte, n)
-			copy(chunk, buffer[:n])
-			input <- chunk
-		}
-	}()
+	input, stopInput := readKeys(in)
+	// Stop reading before handing the terminal back: whatever runs next (the
+	// tool, or agb move's prompts) gets every key typed from then on.
+	defer stopInput()
 
 	// apply runs every key in data. It reports whether the picker is done.
 	apply := func(data []byte) (bool, PickResult, error) {
