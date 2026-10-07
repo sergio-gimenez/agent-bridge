@@ -50,7 +50,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `agb move SESSION --to HOST` hands a Claude Code or Codex session to another
   machine, where it resumes as the same session. One ssh probe checks first:
   same home path, directory, tool and login there; a copy there that continued
-  on its own (it is not a prefix of this one); a session still open here;
+  on its own (it is not a prefix of this one); a session open here or there
+  (Claude Code's own record of running sessions, or a process holding the
+  transcript; no waiting);
   uncommitted or unpushed work; and drift in the agb config or skill sources,
   which `--sync-setup` resolves in this machine's favour. It copies the
   transcript, its sibling directory, the handoffs and transcripts it refers to,

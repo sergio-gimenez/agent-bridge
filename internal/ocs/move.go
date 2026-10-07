@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -27,9 +28,59 @@ import (
 // copy is left in place, and a later move in either direction refuses to
 // overwrite a copy that grew on its own (see checkPrefix).
 
-// activeWindow: a transcript written this recently probably belongs to a
-// session that is still open, and copying it now would lose its last turns.
+// activeWindow is the fallback where no /proc says which processes run: a
+// transcript written this recently probably belongs to an open session.
 const activeWindow = 2 * time.Minute
+
+// openSession reports the process that has the session open on this machine,
+// if any. Claude Code records each running session in <home>/sessions/<pid>.json
+// with the process start time, which rules out a reused pid; a leftover record
+// from a crash does not count. Any tool also counts as open while a process
+// holds the transcript file open. ok is false where /proc is missing.
+func openSession(home string, session Session) (pid int, ok bool) {
+	if _, err := os.Stat("/proc/self/stat"); err != nil {
+		return 0, false
+	}
+	if session.Source == SourceClaude {
+		records, _ := filepath.Glob(filepath.Join(home, "sessions", "*.json"))
+		for _, path := range records {
+			var record struct {
+				PID       int    `json:"pid"`
+				SessionID string `json:"sessionId"`
+				ProcStart string `json:"procStart"`
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil || json.Unmarshal(raw, &record) != nil || record.SessionID != session.ID {
+				continue
+			}
+			if start, alive := procStart(record.PID); alive && (record.ProcStart == "" || record.ProcStart == start) {
+				return record.PID, true
+			}
+		}
+	}
+	fds, _ := filepath.Glob("/proc/[0-9]*/fd/*")
+	for _, fd := range fds {
+		if target, err := os.Readlink(fd); err == nil && target == session.FilePath {
+			pid, _ := strconv.Atoi(strings.Split(fd, "/")[2])
+			return pid, true
+		}
+	}
+	return 0, true
+}
+
+// procStart returns field 22 of /proc/<pid>/stat, the process start time.
+func procStart(pid int) (string, bool) {
+	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return "", false
+	}
+	// The command name (field 2) may hold spaces; it ends at the last ')'.
+	fields := strings.Fields(string(raw[bytes.LastIndexByte(raw, ')')+1:]))
+	if len(fields) < 20 {
+		return "", true
+	}
+	return fields[19], true
+}
 
 type MoveOptions struct {
 	ID     string
@@ -296,6 +347,8 @@ type moveFacts struct {
 	RemoteFile    string // where the transcript goes there
 	Transcript    []byte
 	WrittenAgo    time.Duration
+	OpenPID       int  // the process that has it open here, 0 if none
+	CanSeeProcs   bool // false where /proc is missing: WrittenAgo decides
 	GitRepo       bool
 	GitDirty      bool
 	GitUnpushed   bool
@@ -346,8 +399,14 @@ func decideMove(f moveFacts, opts MoveOptions) moveDecision {
 			block(format+" (--force to move anyway)", args...)
 		}
 	}
-	if f.WrittenAgo < activeWindow {
+	switch {
+	case f.OpenPID > 0:
+		local("the session is open here (pid %d); quit it first", f.OpenPID)
+	case !f.CanSeeProcs && f.WrittenAgo < activeWindow:
 		local("the session was written %s ago and is probably still open here; exit it first", f.WrittenAgo.Round(time.Second))
+	}
+	if pid := r["open_there"]; pid != "" {
+		block("the session is open there (pid %s); quit it there first, or move it back from there", pid)
 	}
 	if f.GitRepo {
 		if f.GitDirty {
@@ -446,6 +505,12 @@ kv home "$HOME"
 	fmt.Fprintf(&s, "kv agb \"$(yes_if command -v agb)\"\n")
 	fmt.Fprintf(&s, "kv login \"$(yes_if test -s %s)\"\n", shellQuote(loginFile))
 	fmt.Fprintf(&s, "if [ -f %[1]s ]; then kv session_size \"$(stat -c %%s %[1]s)\"; kv session_sha \"$(sha256sum < %[1]s | cut -c1-64)\"; fi\n", shellQuote(f.RemoteFile))
+	if f.Session.Source == SourceClaude {
+		fmt.Fprintf(&s, "for rec in %s/sessions/*.json; do [ -f \"$rec\" ] && grep -q %s \"$rec\" && pid=$(basename \"$rec\" .json) && kill -0 \"$pid\" 2>/dev/null && kv open_there \"$pid\"; done\n",
+			shellQuote(f.Home), shellQuote(`"sessionId":"`+f.Session.ID+`"`))
+	}
+	// One find over every process's fd links, matched by target: no process per fd.
+	fmt.Fprintf(&s, "pid=$(find /proc/[0-9]*/fd -maxdepth 1 -lname %s 2>/dev/null | head -1 | cut -d/ -f3); [ -n \"$pid\" ] && kv open_there \"$pid\"\n", shellQuote(f.RemoteFile))
 	settings := filepath.Join(f.Home, "settings.json")
 	fmt.Fprintf(&s, "if [ -f %[1]s ]; then kv settings \"$(sha256sum < %[1]s | cut -c1-64)\"; else kv settings missing; fi\n", shellQuote(settings))
 	if f.GitRepo {
@@ -575,6 +640,7 @@ func moveSession(session Session, config Config, configPath string, opts MoveOpt
 	relocated := remoteFile != session.FilePath
 	facts := moveFacts{Session: session, Home: home, Transcript: transcript, WrittenAgo: time.Since(info.ModTime()),
 		RemoteDir: remoteDir, RemoteFile: remoteFile}
+	facts.OpenPID, facts.CanSeeProcs = openSession(home, session)
 	if inside, err := gitOutput(session.Directory, "rev-parse", "--is-inside-work-tree"); err == nil && inside == "true" {
 		facts.GitRepo = true
 		dirty, _ := gitOutput(session.Directory, "status", "--porcelain", "--untracked-files=no")

@@ -185,7 +185,7 @@ copy     ~/.claude-cc2/projects/-home-sergio-phd/0c5ddcb6-….jsonl
 copy     ~/.claude-cc2/projects/-home-sergio-phd/0c5ddcb6-…        (tool results, subagents)
 copy     ~/.cache/agentbridge/handoffs/773c….txt                (a handoff it refers to)
 merge    ~/.claude-cc2/projects/-home-sergio-phd/memory (newer files there are kept)
-Stop: the session was written 17s ago and is probably still open here; exit it first
+Stop: the session is open here (pid 186198); quit it first (--force to move anyway)
 ```
 
 In the picker, `Ctrl+O` on a session does the same interactively (Ctrl+M
@@ -220,7 +220,14 @@ and the move stops when:
 - the copy already there is not an older state of this one: it continued there,
   so move it back from there instead (transcripts only grow, so an older state
   is a prefix);
-- the session was written in the last two minutes and is probably still open;
+- the session is open, here or there. Claude Code records each running session
+  in `<account>/sessions/<pid>.json` with the process start time (so a reused
+  pid or a record left by a crash does not count), and any tool counts as open
+  while a process holds the transcript file. Quit it and move right away. Only
+  where `/proc` is missing does a transcript written in the last two minutes
+  stand in for this check. Why it matters: an open session keeps appending to
+  the file being copied, so the copy would miss its last turns, and carrying on
+  in both places forks one id into two conversations;
 - the project has uncommitted changes to tracked files, or a HEAD that is on no
   remote branch. Code moves through git, never through `agb move`;
 - the agb config or a skill source differs there.

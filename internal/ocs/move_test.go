@@ -123,6 +123,7 @@ func baseFacts(home string) moveFacts {
 		Home:          filepath.Join(home, ".claude"),
 		Transcript:    []byte("a\nb\n"),
 		WrittenAgo:    time.Hour,
+		CanSeeProcs:   true,
 		LocalSettings: "S",
 		LocalSetup:    map[string]string{"config": "C", "skill:x": "X"},
 		Remote: map[string]string{"home": home, "dir": "yes", "tool": "yes", "login": "yes", "agb": "yes",
@@ -154,8 +155,11 @@ func TestDecideMove(t *testing.T) {
 	check("no tool", func(f *moveFacts) { f.Remote["tool"] = "no" }, MoveOptions{}, "not installed", "")
 	check("logged out", func(f *moveFacts) { f.Remote["login"] = "no" }, MoveOptions{}, "", "logged in")
 	check("continued there", func(f *moveFacts) { f.Remote["session_size"] = "99" }, MoveOptions{}, "longer", "")
-	check("still open", func(f *moveFacts) { f.WrittenAgo = time.Second }, MoveOptions{}, "still open", "")
-	check("still open, forced", func(f *moveFacts) { f.WrittenAgo = time.Second }, MoveOptions{Force: true}, "", "--force")
+	check("open here", func(f *moveFacts) { f.OpenPID = 4242 }, MoveOptions{}, "open here (pid 4242)", "")
+	check("open here, forced", func(f *moveFacts) { f.OpenPID = 4242 }, MoveOptions{Force: true}, "", "--force")
+	check("just written, but no process has it", func(f *moveFacts) { f.WrittenAgo = time.Second }, MoveOptions{}, "", "")
+	check("no /proc, just written", func(f *moveFacts) { f.CanSeeProcs, f.WrittenAgo = false, time.Second }, MoveOptions{}, "probably still open", "")
+	check("open there", func(f *moveFacts) { f.Remote["open_there"] = "77" }, MoveOptions{Force: true}, "open there (pid 77)", "")
 	check("dirty", func(f *moveFacts) { f.GitRepo, f.GitDirty = true, true }, MoveOptions{}, "uncommitted", "")
 	check("unpushed", func(f *moveFacts) { f.GitRepo, f.GitUnpushed = true, true }, MoveOptions{}, "push it first", "")
 	check("other checkout", func(f *moveFacts) { f.GitRepo, f.GitHead, f.Remote["git_head"] = true, "aaa", "bbb" }, MoveOptions{}, "", "pull or switch")
@@ -381,5 +385,48 @@ func TestMoveSessionToAnotherDirectory(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "there in ~/src/phd") || !strings.Contains(out.String(), there+"'\\'' && CLAUDE_CONFIG_DIR") {
 		t.Errorf("output:\n%s", out.String())
+	}
+}
+
+func TestOpenSession(t *testing.T) {
+	if _, err := os.Stat("/proc/self/stat"); err != nil {
+		t.Skip("no /proc")
+	}
+	home := t.TempDir()
+	transcript := filepath.Join(home, "projects", "-p", "s1.jsonl")
+	writeFile(t, transcript, "{}\n")
+	session := Session{ID: "s1", Source: SourceClaude, FilePath: transcript}
+	self := os.Getpid()
+	start, _ := procStart(self)
+	record := func(pid int, id, start string) {
+		writeFile(t, filepath.Join(home, "sessions", fmt.Sprintf("%d.json", pid)),
+			fmt.Sprintf(`{"pid":%d,"sessionId":%q,"procStart":%q}`, pid, id, start))
+	}
+
+	if pid, ok := openSession(home, session); !ok || pid != 0 {
+		t.Fatalf("no record, no open file: got %d %v", pid, ok)
+	}
+	record(self, "other-session", start)
+	if pid, _ := openSession(home, session); pid != 0 {
+		t.Fatalf("another session's record counted: %d", pid)
+	}
+	record(self, "s1", start+"0")
+	if pid, _ := openSession(home, session); pid != 0 {
+		t.Fatalf("a record with another start time (a reused pid) counted: %d", pid)
+	}
+	record(self, "s1", start)
+	if pid, _ := openSession(home, session); pid != self {
+		t.Fatalf("a live record: got %d, want %d", pid, self)
+	}
+	if err := os.RemoveAll(filepath.Join(home, "sessions")); err != nil {
+		t.Fatal(err)
+	}
+	held, err := os.Open(transcript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	if pid, _ := openSession(home, Session{ID: "s1", Source: SourceCodex, FilePath: transcript}); pid != self {
+		t.Fatalf("a held transcript: got %d, want %d", pid, self)
 	}
 }
