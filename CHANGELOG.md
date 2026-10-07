@@ -47,6 +47,16 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `agb move SESSION --to HOST` hands a Claude Code or Codex session to another
+  machine, where it resumes as the same session. One ssh probe checks first:
+  same home path, directory, tool and login there; a copy there that continued
+  on its own (it is not a prefix of this one); a session still open here;
+  uncommitted or unpushed work; and drift in the agb config or skill sources,
+  which `--sync-setup` resolves in this machine's favour. It copies the
+  transcript, its sibling directory, the handoffs and transcripts it refers to,
+  and merges the project memory without overwriting newer files. `--dry-run`
+  checks and lists only; `--launch` resumes there over `ssh -t`.
+
 - Shared setup profiles for local skill folders and stdio/HTTP MCP definitions
   across OpenCode, Claude Code, and Codex accounts. `agb setup --example` prints
   a starter configuration, `agb plan` previews changes, and `agb sync` applies

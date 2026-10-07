@@ -78,6 +78,7 @@ func PrintHelp(out io.Writer) {
 		"  agb plan --profile development",
 		"  agb sync --profile development",
 		"  agb sync --check --json",
+		"  agb move SESSION-ID --to desk [--dry-run] [--sync-setup] [--launch]",
 		"",
 		"Options:",
 		"  --print               print recent sessions without opening picker",

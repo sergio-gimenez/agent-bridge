@@ -171,6 +171,51 @@ checkpoints cannot be reused as readable summaries across tools. Handoff files
 remain until you remove them; deleting them removes that recovery path from
 sessions that reference them. Dry runs also prepare these files.
 
+## Moving a session to another machine
+
+`agb move` hands a Claude Code or Codex session to another machine of yours, so
+it continues there as the same session, not as a seeded fork. Between two
+machines the id stays valid: the transcript goes to the same path under the
+same account, and the tool resumes it natively.
+
+```console
+$ agb move 0c5ddcb6 --to desk --dry-run
+Move CC2 0c5ddcb6-… to desk
+copy     ~/.claude-cc2/projects/-home-sergio-phd/0c5ddcb6-….jsonl
+copy     ~/.claude-cc2/projects/-home-sergio-phd/0c5ddcb6-…        (tool results, subagents)
+copy     ~/.cache/agentbridge/handoffs/773c….txt                (a handoff it refers to)
+merge    ~/.claude-cc2/projects/-home-sergio-phd/memory (newer files there are kept)
+Stop: the session was written 17s ago and is probably still open here; exit it first
+```
+
+`--to` takes an ssh host, an alias from `~/.ssh/config`, and both machines need
+the same home path. One ssh probe checks the other side first, and the move
+stops when:
+
+- the session directory, the tool, or the same home path is missing there;
+- the copy already there is not an older state of this one: it continued there,
+  so move it back from there instead (transcripts only grow, so an older state
+  is a prefix);
+- the session was written in the last two minutes and is probably still open;
+- the project has uncommitted changes to tracked files, or a HEAD that is on no
+  remote branch. Code moves through git, never through `agb move`;
+- the agb config or a skill source differs there.
+
+`--force` overrides the last three checks except setup drift. For that,
+`--sync-setup` makes the config and skill sources there equal to this
+machine's and runs `agb sync` there, and `--ignore-drift` moves anyway.
+
+What goes along: the transcript and, for Claude, its sibling directory; agb
+handoffs and other transcripts that it names by path; the account's
+`settings.json` when the other machine has none; and the project memory, merged
+with `rsync --update` so a newer file there is kept. A notice tells you when the
+checkout there is at a different commit or when the account looks logged out.
+Background tasks the session started do not move, so ask it to re-check them.
+
+`--launch` resumes it there right away over `ssh -t`. Otherwise `agb move`
+prints the command. OpenCode keeps sessions in a database, so it is not
+supported yet.
+
 ## Sharing memory between tools
 
 A fork carries the conversation, not what the agent has saved to memory.

@@ -37,6 +37,8 @@ func run() (int, error) {
 		switch os.Args[1] {
 		case "setup", "plan", "sync":
 			return ocs.RunSetupCommand(os.Args[1], os.Args[2:], os.Stdout)
+		case "move":
+			return ocs.RunMoveCommand(os.Args[2:], os.Stdout)
 		}
 	}
 	args := ocs.ParseArgs(os.Args[1:])
