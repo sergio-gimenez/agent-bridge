@@ -20,8 +20,11 @@ type Config struct {
 	DefaultClaudeAccount string
 	CodexAccounts        []Account
 	DefaultCodexAccount  string
-	// Hosts the picker offers first for Ctrl+O (move to another machine).
+	// Hosts the picker offers first for Ctrl+O (push to another machine).
 	MoveHosts []string
+	// Per host, a shell command agb push runs there once the session has
+	// arrived, e.g. to resume it in a herdr pane. See arriveCommand.
+	Arrive map[string]string
 }
 
 // Each tool names its isolated home with its own environment variable, so each
@@ -156,6 +159,18 @@ func ParseConfig(raw []byte) (Config, error) {
 		}
 	}
 
+	var arrive map[string]string
+	if hooks, ok := parsed["arrive"].(map[string]any); ok {
+		for host, entry := range hooks {
+			if command, ok := entry.(string); ok && strings.TrimSpace(command) != "" {
+				if arrive == nil {
+					arrive = map[string]string{}
+				}
+				arrive[host] = strings.TrimSpace(command)
+			}
+		}
+	}
+
 	return Config{
 		Setup:                setup,
 		SkipPermissions:      skip,
@@ -165,6 +180,7 @@ func ParseConfig(raw []byte) (Config, error) {
 		CodexAccounts:        codex,
 		DefaultCodexAccount:  pickDefault(codex, parsed["defaultCodexAccount"]),
 		MoveHosts:            moveHosts,
+		Arrive:               arrive,
 	}, nil
 }
 
@@ -215,4 +231,28 @@ func (config Config) DefaultSkipPermissions(cliFlag *bool, target Account) bool 
 		}
 	}
 	return config.SkipPermissions
+}
+
+// MachineName is this machine's short host name, or AGB_MACHINE_NAME (the
+// demos use it to say "laptop").
+func MachineName() string {
+	if name := os.Getenv("AGB_MACHINE_NAME"); name != "" {
+		return name
+	}
+	name, _ := os.Hostname()
+	name, _, _ = strings.Cut(name, ".")
+	return name
+}
+
+// OtherHosts is moveHosts without this machine, so one config serves every
+// machine.
+func (c Config) OtherHosts() []string {
+	self := MachineName()
+	var hosts []string
+	for _, host := range c.MoveHosts {
+		if !strings.EqualFold(host, self) {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts
 }

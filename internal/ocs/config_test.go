@@ -77,6 +77,11 @@ func TestParseConfig(t *testing.T) {
 	if got := targetNames(empty); !reflect.DeepEqual(got, []string{"oc", "cc", "cx"}) {
 		t.Fatalf("default targets = %v", got)
 	}
+
+	hosts := mustConfig(t, `{"moveHosts": ["desk", " ", 3], "arrive": {"desk": " herdr x {resume} ", "blank": "  ", "bad": 1}}`)
+	if !reflect.DeepEqual(hosts.MoveHosts, []string{"desk"}) || !reflect.DeepEqual(hosts.Arrive, map[string]string{"desk": "herdr x {resume}"}) {
+		t.Fatalf("moveHosts %v, arrive %v", hosts.MoveHosts, hosts.Arrive)
+	}
 }
 
 func TestAgentBridgePathsPreferNewAndFallbackToOCS(t *testing.T) {

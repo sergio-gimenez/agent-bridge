@@ -7,7 +7,9 @@ import (
 )
 
 type Options struct {
-	Print  bool
+	Print bool
+	// With Print: JSON for another machine's picker (see WriteListing).
+	JSON   bool
 	Help   bool
 	Query  string
 	Search SearchScope
@@ -41,6 +43,8 @@ func ParseArgs(argv []string) Options {
 		switch {
 		case arg == "--print":
 			options.Print = true
+		case arg == "--json":
+			options.JSON = true
 		case arg == "--help" || arg == "-h":
 			options.Help = true
 		case arg == "--assistant":
@@ -78,10 +82,12 @@ func PrintHelp(out io.Writer) {
 		"  agb plan --profile development",
 		"  agb sync --profile development",
 		"  agb sync --check --json",
-		"  agb move SESSION-ID [--to desk] [--dry-run] [--sync-setup] [--launch]",
+		"  agb push [HOST] SESSION-ID [--dir DIR] [--dry-run] [--force] [--no-arrive]",
+		"  agb pull HOST SESSION-ID [--dir DIR] [--dry-run] [--force]",
 		"",
 		"Options:",
 		"  --print               print recent sessions without opening picker",
+		"  --json                with --print: list sessions as JSON (what pull browses)",
 		"  --query TEXT          start with a search query",
 		"  --assistant           include assistant text in search",
 		"  --dangerous           bypass permission checks when opening",
@@ -99,7 +105,8 @@ func PrintHelp(out io.Writer) {
 		"  up/down, PgUp/PgDn    move the selection",
 		"  Enter                 follow the route shown in the badge",
 		"  Ctrl+F                fork: branch that route into a new session",
-		"  Ctrl+O                move the session to another machine (Claude Code, Codex)",
+		"  Ctrl+O                push the session to another machine (Claude Code, Codex)",
+		"  Ctrl+R                browse another machine's sessions; Enter pulls one here",
 		"  Ctrl+T / Shift+Tab    cycle the target forwards / backwards",
 		"  Tab                   open in the next tool, as a seeded fork",
 		"  Ctrl+Y                toggle yolo (bypass permission checks) for this launch",

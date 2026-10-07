@@ -11,7 +11,7 @@ import (
 )
 
 // The picker's Ctrl+O ends here: a few plain prompts on the normal terminal,
-// then the same checks and copy as `agb move`.
+// then the same checks and copy as `agb push`.
 
 // sshConfigHosts lists the concrete Host aliases of an ssh config file and the
 // files it Includes, in file order, without patterns (*, ?, !).
@@ -114,7 +114,7 @@ func (d moveDialog) choose(prompt string, options []string, def string) (string,
 }
 
 func (d moveDialog) pickHost(configured, sshHosts []string) (string, error) {
-	fmt.Fprintln(d.out, bold("Move to which machine?"))
+	fmt.Fprintln(d.out, bold("Push to which machine?"))
 	for i, host := range configured {
 		fmt.Fprintf(d.out, "  %d) %s\n", i+1, host)
 	}
@@ -208,18 +208,18 @@ func (d moveDialog) yes(prompt string, def bool) (bool, error) {
 	return strings.HasPrefix(strings.ToLower(answer), "y"), nil
 }
 
-// RunMoveDialog asks where to, shows the checks and the copy list, and moves
+// RunMoveDialog asks where to, shows the checks and the copy list, and pushes
 // the session after a confirmation.
 func RunMoveDialog(session Session, config Config, in io.Reader, out io.Writer) (int, error) {
-	return runMoveDialog(session, config, ConfigPath(), filepath.Join(homeDir(), ".ssh", "config"), in, out,
-		func(host string) remote { return sshRemote{host} })
+	return runMoveDialog(session, config, filepath.Join(homeDir(), ".ssh", "config"), in, out,
+		func(host string) remote { return dialRemote(host, nil) })
 }
 
-func runMoveDialog(session Session, config Config, configPath, sshConfig string, in io.Reader, out io.Writer, dial func(string) remote) (int, error) {
+func runMoveDialog(session Session, config Config, sshConfig string, in io.Reader, out io.Writer, dial func(string) remote) (int, error) {
 	d := moveDialog{in: bufio.NewReader(in), out: out}
 	fmt.Fprintf(out, "%s %s\n  %s\n  in %s\n\n", AccountLabel(session.Source, session.Account), session.Title, session.ID, ShortenHome(session.Directory))
-	if session.Source != SourceClaude && session.Source != SourceCodex {
-		return 1, fmt.Errorf("%s sessions live in a database, not a file; agb move handles Claude Code and Codex", ToolName(session.Source))
+	if _, _, _, err := accountFiles(session); err != nil {
+		return 1, err
 	}
 
 	// One config serves every machine, so leave out the one this runs on.
@@ -247,16 +247,12 @@ func runMoveDialog(session Session, config Config, configPath, sshConfig string,
 
 	opts := MoveOptions{Host: host, RemoteDir: dir, DryRun: true}
 	fmt.Fprintln(out)
-	if code, err := moveSession(session, config, configPath, opts, link, out); code != 0 || err != nil {
+	if code, err := moveSession(session, config, opts, link, out); code != 0 || err != nil {
 		return code, err
 	}
-	if ok, err := d.yes("\nMove it now? [Y/n] ", true); err != nil || !ok {
+	if ok, err := d.yes("\nPush it now? [Y/n] ", true); err != nil || !ok {
 		return 1, ErrCancelled
 	}
-	launch, err := d.yes(fmt.Sprintf("Resume it on %s right away? [y/N] ", host), false)
-	if err != nil {
-		return 1, err
-	}
-	opts.DryRun, opts.Launch = dryRunEnabled(), launch
-	return moveSession(session, config, configPath, opts, link, out)
+	opts.DryRun = dryRunEnabled()
+	return moveSession(session, config, opts, link, out)
 }

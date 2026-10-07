@@ -3,7 +3,6 @@ package ocs
 import (
 	"bufio"
 	"bytes"
-	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -15,18 +14,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
-// agb move hands a session to another machine of the same user. Unlike a
-// cross-tool or cross-account open, the id stays valid there: the transcript is
-// copied to the same path under the same account home, so the tool resumes the
-// real session rather than a transcript-seeded fork.
+// agb push and agb pull hand a session between two machines of the same user.
+// Unlike a cross-tool or cross-account open, the id stays valid there: the
+// transcript is copied to the same path under the same account home, so the
+// tool resumes the real session rather than a transcript-seeded fork.
 //
-// It is a move, not a sync: one machine owns a session at a time. The local
-// copy is left in place, and a later move in either direction refuses to
-// overwrite a copy that grew on its own (see checkPrefix).
+// Neither is a sync: the copy simply replaces what is on the other side. The
+// one guard is that the session is open on neither machine, since carrying on
+// in both places forks one id into two conversations. Code is git's to carry;
+// agb only notes a checkout that has not been committed and pushed.
 
 // activeWindow is the fallback where no /proc says which processes run: a
 // transcript written this recently probably belongs to an open session.
@@ -36,11 +35,55 @@ const activeWindow = 2 * time.Minute
 // if any. Claude Code records each running session in <home>/sessions/<pid>.json
 // with the process start time, which rules out a reused pid; a leftover record
 // from a crash does not count. Any tool also counts as open while a process
-// holds the transcript file open. ok is false where /proc is missing.
+// holds the transcript file open, or was started to resume it (`claude --resume
+// <id>`, `codex resume <id>`), which covers one that has not got that far yet.
+// ok is false where /proc is missing.
 func openSession(home string, session Session) (pid int, ok bool) {
-	if _, err := os.Stat("/proc/self/stat"); err != nil {
+	procs, ok := snapshotProcs()
+	if !ok {
 		return 0, false
 	}
+	return procs.open(home, session), true
+}
+
+// procs is one pass over /proc: which process holds each open file, and which
+// was started to resume each session id. Listing many sessions asks it many
+// times, so it is read once.
+type procs struct {
+	byFile   map[string]int
+	byResume map[string]int
+}
+
+func snapshotProcs() (procs, bool) {
+	if _, err := os.Stat("/proc/self/stat"); err != nil {
+		return procs{}, false
+	}
+	p := procs{byFile: map[string]int{}, byResume: map[string]int{}}
+	fds, _ := filepath.Glob("/proc/[0-9]*/fd/*")
+	for _, fd := range fds {
+		if target, err := os.Readlink(fd); err == nil && strings.HasSuffix(target, jsonlExt) {
+			pid, _ := strconv.Atoi(strings.Split(fd, "/")[2])
+			p.byFile[target] = pid
+		}
+	}
+	cmdlines, _ := filepath.Glob("/proc/[0-9]*/cmdline")
+	for _, path := range cmdlines {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		args := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
+		for i := 1; i < len(args); i++ {
+			if resumeFlags[args[i-1]] {
+				pid, _ := strconv.Atoi(strings.Split(path, "/")[2])
+				p.byResume[args[i]] = pid
+			}
+		}
+	}
+	return p, true
+}
+
+func (p procs) open(home string, session Session) int {
 	if session.Source == SourceClaude {
 		records, _ := filepath.Glob(filepath.Join(home, "sessions", "*.json"))
 		for _, path := range records {
@@ -54,19 +97,19 @@ func openSession(home string, session Session) (pid int, ok bool) {
 				continue
 			}
 			if start, alive := procStart(record.PID); alive && (record.ProcStart == "" || record.ProcStart == start) {
-				return record.PID, true
+				return record.PID
 			}
 		}
 	}
-	fds, _ := filepath.Glob("/proc/[0-9]*/fd/*")
-	for _, fd := range fds {
-		if target, err := os.Readlink(fd); err == nil && target == session.FilePath {
-			pid, _ := strconv.Atoi(strings.Split(fd, "/")[2])
-			return pid, true
-		}
+	if pid := p.byFile[session.FilePath]; pid > 0 {
+		return pid
 	}
-	return 0, true
+	return p.byResume[session.ID]
 }
+
+// resumeFlags are the arguments that put a session id next on a tool's command
+// line: claude --resume/-r <id>, codex resume <id>.
+var resumeFlags = map[string]bool{"--resume": true, "-r": true, "resume": true}
 
 // procStart returns field 22 of /proc/<pid>/stat, the process start time.
 func procStart(pid int) (string, bool) {
@@ -86,13 +129,10 @@ type MoveOptions struct {
 	ID     string
 	Host   string
 	DryRun bool
-	// Skip the local safety checks: active session, uncommitted or unpushed work.
+	// Push even if the session looks open here.
 	Force bool
-	// Make the remote setup (agb config and skill sources) equal to this one, then
-	// run agb sync there. Without it, setup drift stops the move.
-	SyncSetup   bool
-	IgnoreDrift bool
-	Launch      bool
+	// Skip the host's arrive hook.
+	NoArrive bool
 	// The session's directory on the other machine. Empty means the same path.
 	// For Claude a different path also changes the project folder the
 	// transcript goes to, since Claude keys sessions by directory.
@@ -107,11 +147,23 @@ type remote interface {
 	Copy(paths []string, extra ...string) error
 	// CopyTo puts one local path at another path there, creating its parents.
 	CopyTo(src, dst string, extra ...string) error
+	// Fetch puts one path there at a local path, creating its parents.
+	Fetch(src, dst string, extra ...string) error
 	// Run runs one command there, attached to this terminal.
 	Run(command string) error
 }
 
-type sshRemote struct{ host string }
+type sshRemote struct {
+	host string
+	out  io.Writer // where rsync and hooks print; nil means stdout
+}
+
+func (r sshRemote) writer() io.Writer {
+	if r.out == nil {
+		return os.Stdout
+	}
+	return r.out
+}
 
 func (r sshRemote) Probe(script string) (string, error) {
 	cmd := exec.Command("ssh", "-o", "BatchMode=yes", r.host, "bash -s")
@@ -138,7 +190,7 @@ func (r sshRemote) Copy(paths []string, extra ...string) error {
 	args = append(args, anchored...)
 	args = append(args, r.host+":"+home+"/")
 	cmd := exec.Command("rsync", args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Stdout, cmd.Stderr = r.writer(), r.writer()
 	return cmd.Run()
 }
 
@@ -146,13 +198,21 @@ func (r sshRemote) CopyTo(src, dst string, extra ...string) error {
 	args := append([]string{"-a", "--mkpath"}, extra...)
 	args = append(args, "--", src, r.host+":"+dst)
 	cmd := exec.Command("rsync", args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Stdout, cmd.Stderr = r.writer(), r.writer()
+	return cmd.Run()
+}
+
+func (r sshRemote) Fetch(src, dst string, extra ...string) error {
+	args := append([]string{"-a", "--mkpath"}, extra...)
+	args = append(args, "--", r.host+":"+src, dst)
+	cmd := exec.Command("rsync", args...)
+	cmd.Stdout, cmd.Stderr = r.writer(), r.writer()
 	return cmd.Run()
 }
 
 func (r sshRemote) Run(command string) error {
 	cmd := exec.Command("ssh", "-o", "BatchMode=yes", r.host, command)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Stdout, cmd.Stderr = r.writer(), r.writer()
 	return cmd.Run()
 }
 
@@ -165,7 +225,7 @@ func anchorAtHome(home string, paths []string) ([]string, error) {
 	for _, path := range paths {
 		rel, ok := strings.CutPrefix(path, home+string(filepath.Separator))
 		if home == "" || !ok || rel == "" {
-			return nil, fmt.Errorf("%s is not under %s; agb move only copies files below home", path, home)
+			return nil, fmt.Errorf("%s is not under %s; agb push only copies files below home", path, home)
 		}
 		anchored = append(anchored, home+string(filepath.Separator)+"."+string(filepath.Separator)+rel)
 	}
@@ -175,79 +235,6 @@ func anchorAtHome(home string, paths []string) ([]string, error) {
 // shellQuote makes any string one word for a POSIX shell.
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
-}
-
-// treeHashScript prints one hash for a directory's file contents and names,
-// following symlinks, the same way treeHash computes it locally.
-const treeHashScript = `treehash() { ( cd "$1" 2>/dev/null && find -L . -type f ! -path '*/__pycache__/*' ! -name '*.pyc' -print0 | LC_ALL=C sort -z | xargs -0r sha256sum | sha256sum | cut -c1-64 ) || echo missing; }
-`
-
-// treeHash mirrors treeHashScript: sha256 over sha256sum's listing of every
-// file (bytewise path order, ./-prefixed), skipping Python byte-code caches.
-func treeHash(dir string) (string, error) {
-	var paths []string
-	var walk func(abs, rel string) error
-	walk = func(abs, rel string) error {
-		entries, err := os.ReadDir(abs)
-		if err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			name := entry.Name()
-			childAbs, childRel := filepath.Join(abs, name), rel+"/"+name
-			info, err := os.Stat(childAbs) // follows symlinks, as find -L does
-			if err != nil {
-				continue
-			}
-			if info.IsDir() {
-				if name == "__pycache__" {
-					continue
-				}
-				if err := walk(childAbs, childRel); err != nil {
-					return err
-				}
-			} else if info.Mode().IsRegular() && !strings.HasSuffix(name, ".pyc") {
-				paths = append(paths, childRel)
-			}
-		}
-		return nil
-	}
-	if err := walk(dir, "."); err != nil {
-		return "", err
-	}
-	sort.Strings(paths)
-	var listing bytes.Buffer
-	for _, rel := range paths {
-		raw, err := os.ReadFile(filepath.Join(dir, rel))
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintf(&listing, "%x  %s\n", sha256.Sum256(raw), rel)
-	}
-	return fmt.Sprintf("%x", sha256.Sum256(listing.Bytes())), nil
-}
-
-func fileHash(path string) string {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return "missing"
-	}
-	return fmt.Sprintf("%x", sha256.Sum256(raw))
-}
-
-// checkPrefix decides whether the copy already on the other machine may be
-// replaced. Transcripts only grow, so a copy that is a prefix of ours is an
-// older state of the same session; anything else continued there on its own.
-func checkPrefix(local []byte, remoteSize int64, remoteSHA string) error {
-	switch {
-	case remoteSize < 0:
-		return nil // no copy there
-	case remoteSize > int64(len(local)):
-		return fmt.Errorf("the copy there is longer than this one: the session continued there. Move it back from there instead")
-	case fmt.Sprintf("%x", sha256.Sum256(local[:remoteSize])) != remoteSHA:
-		return fmt.Errorf("the copy there has diverged from this one (not an older state of it); both continued separately")
-	}
-	return nil
 }
 
 // referencedFiles finds files the transcript names by absolute path that a
@@ -341,189 +328,153 @@ func claudeProjectKey(dir string) string {
 // moveFacts is everything the decision needs, gathered first so the decision
 // itself is a pure function.
 type moveFacts struct {
-	Session       Session
-	Home          string // the account home: CLAUDE_CONFIG_DIR or CODEX_HOME
-	RemoteDir     string // the session directory there
-	RemoteFile    string // where the transcript goes there
-	Transcript    []byte
-	WrittenAgo    time.Duration
-	OpenPID       int  // the process that has it open here, 0 if none
-	CanSeeProcs   bool // false where /proc is missing: WrittenAgo decides
-	GitRepo       bool
-	GitDirty      bool
-	GitUnpushed   bool
-	GitHead       string
-	Remote        map[string]string
-	LocalSettings string            // hash of the account's settings.json
-	LocalSetup    map[string]string // "config" and "skill:<name>" -> hash
+	Session     Session
+	Home        string // the account home: CLAUDE_CONFIG_DIR or CODEX_HOME
+	RemoteDir   string // the session directory there
+	RemoteFile  string // where the transcript goes there
+	Transcript  []byte
+	WrittenAgo  time.Duration
+	OpenPID     int  // the process that has it open here, 0 if none
+	CanSeeProcs bool // false where /proc is missing: WrittenAgo decides
+	GitRepo     bool
+	GitDirty    bool
+	GitUnpushed bool
+	GitHead     string
+	Remote      map[string]string
 }
 
 type moveDecision struct {
 	Blockers []string
 	Warnings []string
-	// The account's settings.json goes along when the other machine has none.
-	CopySettings bool
-	SetupDrift   []string
+	// What checked out, for the picker's push panel.
+	Passed []string
 }
 
 func decideMove(f moveFacts, opts MoveOptions) moveDecision {
 	var d moveDecision
 	r := f.Remote
+	host := opts.Host
 	block := func(format string, args ...any) { d.Blockers = append(d.Blockers, fmt.Sprintf(format, args...)) }
 	warn := func(format string, args ...any) { d.Warnings = append(d.Warnings, fmt.Sprintf(format, args...)) }
-
-	if home := homeDir(); r["home"] != home {
-		block("HOME there is %q, here %q: agb move needs the same home path on both machines", r["home"], home)
-	}
-	if r["dir"] != "yes" {
-		block("the session directory does not exist there: %s (clone or create it first)", ShortenHome(f.RemoteDir))
-	}
-	if r["tool"] != "yes" {
-		block("%s is not installed there", ToolName(f.Session.Source))
-	}
-	if r["login"] != "yes" {
-		warn("the %s account there does not look logged in (%s); log in before resuming", AccountLabel(f.Session.Source, f.Session.Account), ShortenHome(f.Home))
-	}
-	size := int64(-1)
-	if value, ok := r["session_size"]; ok {
-		size, _ = strconv.ParseInt(value, 10, 64)
-	}
-	if err := checkPrefix(f.Transcript, size, r["session_sha"]); err != nil {
-		block("%v", err)
-	}
-
+	pass := func(format string, args ...any) { d.Passed = append(d.Passed, fmt.Sprintf(format, args...)) }
 	local := func(format string, args ...any) {
 		if opts.Force {
 			warn(format+" (--force)", args...)
 		} else {
-			block(format+" (--force to move anyway)", args...)
+			block(format+" (--force to push anyway)", args...)
 		}
 	}
+	tool, account := ToolName(f.Session.Source), AccountLabel(f.Session.Source, f.Session.Account)
+
+	if home := homeDir(); r["home"] != home {
+		block("HOME on %s is %q, here %q: agb push needs the same home path on both machines", host, r["home"], home)
+	}
+	if r["dir"] != "yes" {
+		block("%s does not exist on %s (clone or create it first)", ShortenHome(f.RemoteDir), host)
+	} else {
+		pass("%s exists on %s", ShortenHome(f.RemoteDir), host)
+	}
+	switch {
+	case r["tool"] != "yes":
+		block("%s is not installed on %s", tool, host)
+	case r["login"] != "yes":
+		warn("the %s account on %s does not look logged in (%s); log in before resuming", account, host, ShortenHome(f.Home))
+	default:
+		pass("%s on %s, %s logged in", tool, host, account)
+	}
+
+	open := false
 	switch {
 	case f.OpenPID > 0:
+		open = true
 		local("the session is open here (pid %d); quit it first", f.OpenPID)
 	case !f.CanSeeProcs && f.WrittenAgo < activeWindow:
+		open = true
 		local("the session was written %s ago and is probably still open here; exit it first", f.WrittenAgo.Round(time.Second))
 	}
 	if pid := r["open_there"]; pid != "" {
-		block("the session is open there (pid %s); quit it there first, or move it back from there", pid)
+		open = true
+		block("the session is open on %s (pid %s); quit it there first, or pull it from there", host, pid)
 	}
+	if !open {
+		pass("not open here or on %s", host)
+	}
+
+	// Transcripts only grow, so a bigger copy there went on without this one,
+	// and replacing it would lose those turns.
+	switch size, err := strconv.ParseInt(r["session_size"], 10, 64); {
+	case err != nil:
+		pass("no copy on %s yet", host)
+	case size > int64(len(f.Transcript)):
+		local("the copy is bigger on %s (%s vs %s): it went on there; pull it instead", host, humanBytes(size), humanBytes(int64(len(f.Transcript))))
+	default:
+		pass("the copy on %s is not newer (%s vs %s)", host, humanBytes(size), humanBytes(int64(len(f.Transcript))))
+	}
+
 	if f.GitRepo {
+		clean := true
 		if f.GitDirty {
-			local("%s has uncommitted changes to tracked files; commit and push them first", ShortenHome(f.Session.Directory))
+			clean = false
+			warn("%s has uncommitted changes to tracked files; commit and push them so the code goes along", ShortenHome(f.Session.Directory))
 		}
 		if f.GitUnpushed {
-			local("HEAD of %s is on no remote branch; push it first", ShortenHome(f.Session.Directory))
+			clean = false
+			warn("HEAD of %s is on no remote branch; push it so the code goes along", ShortenHome(f.Session.Directory))
 		}
 		if head := r["git_head"]; head != "" && head != f.GitHead {
-			warn("the checkout there is at %.10s, here at %.10s; pull or switch it before resuming", head, f.GitHead)
+			clean = false
+			warn("the checkout on %s is at %.10s, here at %.10s; pull or switch it before resuming", host, head, f.GitHead)
 		}
-	}
-
-	switch remoteSettings := r["settings"]; {
-	case f.LocalSettings == "missing":
-	case remoteSettings == "missing" || remoteSettings == "":
-		d.CopySettings = true
-	case remoteSettings != f.LocalSettings:
-		warn("%s/settings.json differs there; it is left as it is", ShortenHome(f.Home))
-	}
-
-	for _, key := range sortedKeys(f.LocalSetup) {
-		if r["setup:"+key] != f.LocalSetup[key] {
-			d.SetupDrift = append(d.SetupDrift, key)
-		}
-	}
-	if len(d.SetupDrift) > 0 {
-		switch {
-		case opts.SyncSetup:
-			if r["agb"] != "yes" {
-				block("--sync-setup needs agb installed there")
-			}
-		case opts.IgnoreDrift:
-			warn("setup differs there (%s); ignored", strings.Join(d.SetupDrift, ", "))
-		default:
-			block("setup differs there: %s. --sync-setup makes it equal to this machine's, --ignore-drift moves anyway", strings.Join(d.SetupDrift, ", "))
+		if clean {
+			pass("%s is committed and pushed", ShortenHome(f.Session.Directory))
 		}
 	}
 	return d
 }
 
-// setupSources lists the agb config and every skill source its profiles name,
-// as "config" / "skill:<name>" -> local path.
-func setupSources(config Config, configPath string) map[string]string {
-	sources := map[string]string{}
-	if _, err := os.Stat(configPath); err != nil {
-		return sources
+// humanBytes is a size as people read it: 99 B, 4.1 KB, 8.2 MB.
+func humanBytes(n int64) string {
+	switch {
+	case n < 1000:
+		return fmt.Sprintf("%d B", n)
+	case n < 1000*1000:
+		return fmt.Sprintf("%.1f KB", float64(n)/1000)
 	}
-	sources["config"] = configPath
-	if config.Setup == nil {
-		return sources
-	}
-	base := filepath.Dir(configPath)
-	addSkills := func(skills map[string]SetupSkill) {
-		for name, skill := range skills {
-			if skill.Path == "" || !setupEnabled(skill.Enabled) {
-				continue
-			}
-			if path, err := setupPath(skill.Path, base); err == nil {
-				sources["skill:"+name] = path
-			}
-		}
-	}
-	for _, profile := range config.Setup.Profiles {
-		addSkills(profile.Skills)
-		for _, override := range profile.Overrides {
-			addSkills(override.Skills)
-		}
-	}
-	return sources
+	return fmt.Sprintf("%.1f MB", float64(n)/1000/1000)
 }
 
-func localSetupHashes(sources map[string]string) map[string]string {
-	hashes := map[string]string{}
-	for key, path := range sources {
-		if key == "config" {
-			hashes[key] = fileHash(path)
-		} else if hash, err := treeHash(path); err == nil {
-			hashes[key] = hash
-		} else {
-			hashes[key] = "missing"
-		}
-	}
-	return hashes
-}
-
-func probeScript(f moveFacts, sources map[string]string, toolBinary, loginFile string) string {
+func probeScript(f moveFacts, toolBinary, loginFile string) string {
 	var s strings.Builder
-	s.WriteString(treeHashScript)
 	s.WriteString(`kv() { printf '%s=%s\n' "$1" "$2"; }
 yes_if() { if "$@" >/dev/null 2>&1; then echo yes; else echo no; fi; }
 kv home "$HOME"
 `)
 	fmt.Fprintf(&s, "kv dir \"$(yes_if test -d %s)\"\n", shellQuote(f.RemoteDir))
 	fmt.Fprintf(&s, "kv tool \"$(yes_if command -v %s)\"\n", toolBinary)
-	fmt.Fprintf(&s, "kv agb \"$(yes_if command -v agb)\"\n")
 	fmt.Fprintf(&s, "kv login \"$(yes_if test -s %s)\"\n", shellQuote(loginFile))
-	fmt.Fprintf(&s, "if [ -f %[1]s ]; then kv session_size \"$(stat -c %%s %[1]s)\"; kv session_sha \"$(sha256sum < %[1]s | cut -c1-64)\"; fi\n", shellQuote(f.RemoteFile))
-	if f.Session.Source == SourceClaude {
-		fmt.Fprintf(&s, "for rec in %s/sessions/*.json; do [ -f \"$rec\" ] && grep -q %s \"$rec\" && pid=$(basename \"$rec\" .json) && kill -0 \"$pid\" 2>/dev/null && kv open_there \"$pid\"; done\n",
-			shellQuote(f.Home), shellQuote(`"sessionId":"`+f.Session.ID+`"`))
-	}
-	// One find over every process's fd links, matched by target: no process per fd.
-	fmt.Fprintf(&s, "pid=$(find /proc/[0-9]*/fd -maxdepth 1 -lname %s 2>/dev/null | head -1 | cut -d/ -f3); [ -n \"$pid\" ] && kv open_there \"$pid\"\n", shellQuote(f.RemoteFile))
-	settings := filepath.Join(f.Home, "settings.json")
-	fmt.Fprintf(&s, "if [ -f %[1]s ]; then kv settings \"$(sha256sum < %[1]s | cut -c1-64)\"; else kv settings missing; fi\n", shellQuote(settings))
+	s.WriteString(openThereScript(f.Session, f.Home, f.RemoteFile))
+	fmt.Fprintf(&s, "if [ -f %[1]s ]; then kv session_size \"$(stat -c %%s %[1]s)\"; fi\n", shellQuote(f.RemoteFile))
 	if f.GitRepo {
 		fmt.Fprintf(&s, "kv git_head \"$(git -C %s rev-parse HEAD 2>/dev/null)\"\n", shellQuote(f.RemoteDir))
 	}
-	for _, key := range sortedKeys(sources) {
-		path := shellQuote(sources[key])
-		if key == "config" {
-			fmt.Fprintf(&s, "if [ -f %[1]s ]; then kv setup:config \"$(sha256sum < %[1]s | cut -c1-64)\"; else kv setup:config missing; fi\n", path)
-		} else {
-			fmt.Fprintf(&s, "kv %s \"$(treehash %s)\"\n", shellQuote("setup:"+key), path)
-		}
+	return s.String()
+}
+
+// openThereScript prints open_there=<pid> when a process there has the session
+// open: Claude Code's record of a running session, or any process holding the
+// transcript. It needs the kv helper.
+func openThereScript(session Session, home, file string) string {
+	var s strings.Builder
+	if session.Source == SourceClaude {
+		fmt.Fprintf(&s, "for rec in %s/sessions/*.json; do [ -f \"$rec\" ] && grep -q %s \"$rec\" && pid=$(basename \"$rec\" .json) && kill -0 \"$pid\" 2>/dev/null && kv open_there \"$pid\"; done\n",
+			shellQuote(home), shellQuote(`"sessionId":"`+session.ID+`"`))
 	}
+	// One find over every process's fd links, matched by target: no process per fd.
+	fmt.Fprintf(&s, "pid=$(find /proc/[0-9]*/fd -maxdepth 1 -lname %s 2>/dev/null | head -1 | cut -d/ -f3); if [ -n \"$pid\" ]; then kv open_there \"$pid\"; fi\n", shellQuote(file))
+	// A process started to resume it (see resumeFlags); one grep over every
+	// command line, whose arguments are NUL-separated.
+	pattern := `(^|\x00)(--resume|-r|resume)\x00` + regexp.QuoteMeta(session.ID) + `(\x00|$)`
+	fmt.Fprintf(&s, "pid=$(grep -lsaP -- %s /proc/[0-9]*/cmdline 2>/dev/null | head -1 | cut -d/ -f3); if [ -n \"$pid\" ]; then kv open_there \"$pid\"; fi\n", shellQuote(pattern))
 	return s.String()
 }
 
@@ -559,25 +510,13 @@ func findSession(sessions []Session, prefix string) (Session, error) {
 	return Session{}, fmt.Errorf("id %q matches %d sessions; give more of it", prefix, len(matches))
 }
 
-// RunMoveCommand parses `agb move` arguments and runs the move.
-func RunMoveCommand(argv []string, out io.Writer) (int, error) {
-	flags := flag.NewFlagSet("agb move", flag.ContinueOnError)
-	flags.SetOutput(out)
-	opts := MoveOptions{}
-	flags.StringVar(&opts.Host, "to", "", "ssh host to move the session to (an alias from ~/.ssh/config)")
-	flags.BoolVar(&opts.DryRun, "dry-run", false, "check and list what would be copied, change nothing")
-	flags.BoolVar(&opts.Force, "force", false, "move even if the session looks open or the project has unpushed work")
-	flags.BoolVar(&opts.SyncSetup, "sync-setup", false, "make the agb config and skill sources there equal to this machine's, then agb sync there")
-	flags.BoolVar(&opts.IgnoreDrift, "ignore-drift", false, "move even if the setup differs there")
-	flags.BoolVar(&opts.Launch, "launch", false, "resume the session there right away (ssh -t)")
-	// Flags may come after the id, as people type them.
+// parseInterleaved parses flags that may come before, between or after the
+// positional arguments, as people type them.
+func parseInterleaved(flags *flag.FlagSet, argv []string) ([]string, error) {
 	var positional []string
 	for len(argv) > 0 {
 		if err := flags.Parse(argv); err != nil {
-			if err == flag.ErrHelp {
-				return 0, nil
-			}
-			return 2, err
+			return nil, err
 		}
 		if flags.NArg() == 0 {
 			break
@@ -585,12 +524,37 @@ func RunMoveCommand(argv []string, out io.Writer) (int, error) {
 		positional = append(positional, flags.Arg(0))
 		argv = flags.Args()[1:]
 	}
-	if len(positional) != 1 {
-		return 2, fmt.Errorf("usage: agb move SESSION-ID [--to HOST] [--dry-run] [--force] [--sync-setup|--ignore-drift] [--launch]\n" +
-			"without --to it asks for the host and the directory there")
+	return positional, nil
+}
+
+// RunPushCommand parses `agb push [HOST] SESSION-ID` and pushes the session.
+func RunPushCommand(argv []string, out io.Writer) (int, error) {
+	flags := flag.NewFlagSet("agb push", flag.ContinueOnError)
+	flags.SetOutput(out)
+	opts := MoveOptions{}
+	flags.StringVar(&opts.RemoteDir, "dir", "", "the session's directory there (default: the same path)")
+	flags.BoolVar(&opts.DryRun, "dry-run", false, "check and list what would be copied, change nothing")
+	flags.BoolVar(&opts.Force, "force", false, "push even if the session looks open here")
+	flags.BoolVar(&opts.NoArrive, "no-arrive", false, "do not run the host's arrive hook")
+	positional, err := parseInterleaved(flags, argv)
+	if err == flag.ErrHelp {
+		return 0, nil
+	} else if err != nil {
+		return 2, err
 	}
-	opts.ID = positional[0]
+	switch len(positional) {
+	case 1:
+		opts.ID = positional[0]
+	case 2:
+		opts.Host, opts.ID = positional[0], positional[1]
+	default:
+		return 2, fmt.Errorf("usage: agb push [HOST] SESSION-ID [--dir DIR] [--dry-run] [--force] [--no-arrive]\n" +
+			"without HOST it asks for the host and the directory there")
+	}
 	opts.DryRun = opts.DryRun || dryRunEnabled()
+	if opts.RemoteDir != "" {
+		opts.RemoteDir = expandHome(opts.RemoteDir)
+	}
 
 	config := LoadConfig()
 	session, err := findSession(OpenCache(CachePath(), false).AllSessions(config, ScopeUser), opts.ID)
@@ -600,44 +564,111 @@ func RunMoveCommand(argv []string, out io.Writer) (int, error) {
 	if opts.Host == "" {
 		return RunMoveDialog(session, config, os.Stdin, out)
 	}
-	return moveSession(session, config, ConfigPath(), opts, sshRemote{opts.Host}, out)
+	return moveSession(session, config, opts, dialRemote(opts.Host, nil), out)
 }
 
-func moveSession(session Session, config Config, configPath string, opts MoveOptions, link remote, out io.Writer) (int, error) {
-	var home, toolBinary, loginFile string
+// accountFiles is where a session's account keeps its state, the tool that
+// resumes it, and the file a logged-in account has.
+func accountFiles(session Session) (home, toolBinary, loginFile string, err error) {
 	switch session.Source {
 	case SourceClaude:
 		home = filepath.Dir(claudeProjectsPath(session.Account))
-		toolBinary, loginFile = "claude", filepath.Join(home, ".credentials.json")
+		return home, "claude", filepath.Join(home, ".credentials.json"), nil
 	case SourceCodex:
 		home = codexHome(session.Account)
-		toolBinary, loginFile = "codex", filepath.Join(home, "auth.json")
-	default:
-		return 1, fmt.Errorf("%s sessions live in a database, not a file; agb move handles Claude Code and Codex", ToolName(session.Source))
+		return home, "codex", filepath.Join(home, "auth.json"), nil
 	}
-	if session.FilePath == "" {
-		return 1, fmt.Errorf("no transcript file recorded for %s", session.ID)
-	}
+	return "", "", "", fmt.Errorf("%s sessions live in a database, not a file; agb push and pull handle Claude Code and Codex", ToolName(session.Source))
+}
 
-	transcript, err := os.ReadFile(session.FilePath)
+// relocatedTranscript is where a transcript goes for another directory: for
+// Claude, which files sessions by directory, that directory's project folder.
+// Only a different directory relocates it, so a project folder whose name does
+// not follow claudeProjectKey stays as it is.
+func relocatedTranscript(session Session, dir string) string {
+	if session.Source != SourceClaude || dir == session.Directory {
+		return session.FilePath
+	}
+	return filepath.Join(filepath.Dir(filepath.Dir(session.FilePath)), claudeProjectKey(dir), filepath.Base(session.FilePath))
+}
+
+// pushPlan is everything a push will do, worked out before anything is
+// copied: the checks, what goes along, and how the session resumes there.
+type pushPlan struct {
+	Session   Session
+	Host      string
+	RemoteDir string
+	Decision  moveDecision
+	// The process that has the session open here, 0 if none.
+	LocalPID int
+	// Paths that change project folder there go by CopyTo; Files keep their
+	// path. Referenced files and memory keep a newer copy there.
+	Moves       []relocation
+	Files       []string
+	Referenced  []string
+	Memory      string
+	MemoryThere string
+	Relocated   bool
+	// The session as it will sit there, the command that resumes it, and the
+	// host's arrive hook ("" for none).
+	There  Session
+	Resume string
+	Hook   string
+}
+
+type relocation struct{ from, to string }
+
+func moveSession(session Session, config Config, opts MoveOptions, link remote, out io.Writer) (int, error) {
+	plan, err := planPush(session, config, opts, link)
 	if err != nil {
 		return 1, err
+	}
+	plan.print(out)
+	if len(plan.Decision.Blockers) > 0 {
+		return 2, fmt.Errorf("not pushed")
+	}
+	if opts.DryRun {
+		fmt.Fprintf(out, "Dry run: nothing copied. There, it would resume with:\n  %s\n", plan.Resume)
+		if plan.Hook != "" && !opts.NoArrive {
+			fmt.Fprintf(out, "and the arrive hook would run:\n  %s\n", arriveCommand(plan.Hook, plan.There, plan.Resume))
+		}
+		return 0, nil
+	}
+	if err := plan.copy(link); err != nil {
+		return 1, err
+	}
+	if plan.Hook == "" || opts.NoArrive {
+		fmt.Fprintf(out, "Pushed. Exit it here if it is still open; it now continues there:\n  ssh -t %s %s\n", opts.Host, shellQuote(plan.Resume))
+		return 0, nil
+	}
+	fmt.Fprintf(out, "Pushed. Exit it here if it is still open. Running the arrive hook on %s.\n", opts.Host)
+	if err := plan.arrive(link); err != nil {
+		return 1, err
+	}
+	return 0, nil
+}
+
+func planPush(session Session, config Config, opts MoveOptions, link remote) (pushPlan, error) {
+	home, toolBinary, loginFile, err := accountFiles(session)
+	if err != nil {
+		return pushPlan{}, err
+	}
+	if session.FilePath == "" {
+		return pushPlan{}, fmt.Errorf("no transcript file recorded for %s", session.ID)
+	}
+	transcript, err := os.ReadFile(session.FilePath)
+	if err != nil {
+		return pushPlan{}, err
 	}
 	info, err := os.Stat(session.FilePath)
 	if err != nil {
-		return 1, err
+		return pushPlan{}, err
 	}
 	remoteDir := opts.RemoteDir
 	if remoteDir == "" {
 		remoteDir = session.Directory
 	}
-	// Only a directory chosen for the other side relocates the transcript; a
-	// project folder whose name does not follow claudeProjectKey stays as it is.
-	remoteFile := session.FilePath
-	if session.Source == SourceClaude && remoteDir != session.Directory {
-		remoteFile = filepath.Join(filepath.Dir(filepath.Dir(session.FilePath)), claudeProjectKey(remoteDir), filepath.Base(session.FilePath))
-	}
-	relocated := remoteFile != session.FilePath
+	remoteFile := relocatedTranscript(session, remoteDir)
 	facts := moveFacts{Session: session, Home: home, Transcript: transcript, WrittenAgo: time.Since(info.ModTime()),
 		RemoteDir: remoteDir, RemoteFile: remoteFile}
 	facts.OpenPID, facts.CanSeeProcs = openSession(home, session)
@@ -649,16 +680,17 @@ func moveSession(session Session, config Config, configPath string, opts MoveOpt
 		facts.GitUnpushed = branches == ""
 		facts.GitHead, _ = gitOutput(session.Directory, "rev-parse", "HEAD")
 	}
-	facts.LocalSettings = fileHash(filepath.Join(home, "settings.json"))
-	sources := setupSources(config, configPath)
-	facts.LocalSetup = localSetupHashes(sources)
-
-	probe, err := link.Probe(probeScript(facts, sources, toolBinary, loginFile))
+	probe, err := link.Probe(probeScript(facts, toolBinary, loginFile))
 	if err != nil {
-		return 1, err
+		return pushPlan{}, err
 	}
 	facts.Remote = parseProbe(probe)
-	decision := decideMove(facts, opts)
+
+	plan := pushPlan{Session: session, Host: opts.Host, RemoteDir: remoteDir, Decision: decideMove(facts, opts),
+		LocalPID: facts.OpenPID, Relocated: remoteFile != session.FilePath}
+	if !opts.NoArrive {
+		plan.Hook = config.Arrive[opts.Host]
+	}
 
 	// What goes along.
 	var transcriptRoots []string
@@ -667,120 +699,111 @@ func moveSession(session Session, config Config, configPath string, opts MoveOpt
 		transcriptRoots = append(transcriptRoots, claudeProjectsPath(&account))
 	}
 	transcriptRoots = append(transcriptRoots, claudeProjectsPath(nil))
-	// What changes project folder there goes by CopyTo; the rest keeps its path.
-	type relocation struct{ from, to string }
-	var moved []relocation
-	var files []string
 	sibling := strings.TrimSuffix(session.FilePath, jsonlExt)
-	if relocated {
-		moved = append(moved, relocation{session.FilePath, remoteFile})
+	if plan.Relocated {
+		plan.Moves = append(plan.Moves, relocation{session.FilePath, remoteFile})
 		if isDir(sibling) {
-			moved = append(moved, relocation{sibling + "/", strings.TrimSuffix(remoteFile, jsonlExt) + "/"})
+			plan.Moves = append(plan.Moves, relocation{sibling + "/", strings.TrimSuffix(remoteFile, jsonlExt) + "/"})
 		}
 	} else {
-		files = append(files, session.FilePath)
+		plan.Files = append(plan.Files, session.FilePath)
 		if session.Source == SourceClaude && isDir(sibling) {
-			files = append(files, sibling)
+			plan.Files = append(plan.Files, sibling)
 		}
 	}
-	files = append(files, referencedFiles(transcript, session.FilePath, filepath.Join(filepath.Dir(CachePath()), "handoffs"), transcriptRoots)...)
-	if decision.CopySettings {
-		files = append(files, filepath.Join(home, "settings.json"))
-	}
-	files = withoutNested(files)
-	var memory string
+	plan.Files = withoutNested(plan.Files)
+	plan.Referenced = referencedFiles(transcript, session.FilePath, filepath.Join(filepath.Dir(CachePath()), "handoffs"), transcriptRoots)
 	if session.Source == SourceClaude {
 		if dir := filepath.Join(filepath.Dir(session.FilePath), "memory"); isDir(dir) {
-			memory = dir
+			plan.Memory, plan.MemoryThere = dir, dir
+			if plan.Relocated {
+				plan.MemoryThere = filepath.Join(filepath.Dir(remoteFile), "memory")
+			}
 		}
 	}
+	plan.There = session
+	plan.There.Directory = remoteDir
+	plan.Resume = resumeCommand(plan.There, home)
+	return plan, nil
+}
 
-	memoryThere := memory
-	if relocated && memory != "" {
-		memoryThere = filepath.Join(filepath.Dir(remoteFile), "memory")
-	}
-	fmt.Fprintf(out, "Move %s %s to %s\n  %s\n  in %s", AccountLabel(session.Source, session.Account), session.ID, opts.Host, session.Title, ShortenHome(session.Directory))
-	if remoteDir != session.Directory {
-		fmt.Fprintf(out, ", there in %s", ShortenHome(remoteDir))
+func (plan pushPlan) print(out io.Writer) {
+	session := plan.Session
+	fmt.Fprintf(out, "Push %s %s to %s\n  %s\n  in %s", AccountLabel(session.Source, session.Account), session.ID, plan.Host, session.Title, ShortenHome(session.Directory))
+	if plan.RemoteDir != session.Directory {
+		fmt.Fprintf(out, ", there in %s", ShortenHome(plan.RemoteDir))
 	}
 	fmt.Fprintln(out)
-	for _, m := range moved {
+	for _, m := range plan.Moves {
 		fmt.Fprintf(out, "copy     %s -> %s\n", ShortenHome(strings.TrimSuffix(m.from, "/")), ShortenHome(strings.TrimSuffix(m.to, "/")))
 	}
-	for _, path := range files {
+	for _, path := range plan.Files {
 		fmt.Fprintf(out, "copy     %s\n", ShortenHome(path))
 	}
-	if memory != "" {
-		fmt.Fprintf(out, "merge    %s (newer files there are kept)\n", ShortenHome(memoryThere))
+	for _, path := range plan.Referenced {
+		fmt.Fprintf(out, "copy     %s (unless newer there)\n", ShortenHome(path))
 	}
-	if opts.SyncSetup {
-		for _, key := range decision.SetupDrift {
-			fmt.Fprintf(out, "setup    %s -> %s\n", key, ShortenHome(sources[key]))
-		}
+	if plan.Memory != "" {
+		fmt.Fprintf(out, "merge    %s (newer files there are kept)\n", ShortenHome(plan.MemoryThere))
 	}
-	for _, warning := range decision.Warnings {
+	for _, warning := range plan.Decision.Warnings {
 		fmt.Fprintf(out, "Note: %s\n", warning)
 	}
-	for _, blocker := range decision.Blockers {
+	for _, blocker := range plan.Decision.Blockers {
 		fmt.Fprintf(out, "Stop: %s\n", blocker)
 	}
-	if len(decision.Blockers) > 0 {
-		return 2, fmt.Errorf("not moved")
-	}
+}
 
-	thereSession := session
-	thereSession.Directory = remoteDir
-	resume := resumeCommand(thereSession, home)
-	if opts.DryRun {
-		fmt.Fprintf(out, "Dry run: nothing copied. There, it would resume with:\n  %s\n", resume)
-		return 0, nil
-	}
-
-	if opts.SyncSetup && len(decision.SetupDrift) > 0 {
-		for _, key := range decision.SetupDrift {
-			path := sources[key]
-			if key == "config" {
-				err = link.Copy([]string{path})
-			} else {
-				// A skill directory is replaced as a whole, so files removed here go there too.
-				err = link.Copy([]string{path + "/"}, "--delete")
-			}
-			if err != nil {
-				return 1, fmt.Errorf("copying %s: %w", key, err)
-			}
-		}
-		if err := link.Run("agb sync && agb sync --check >/dev/null"); err != nil {
-			return 1, fmt.Errorf("agb sync there: %w", err)
-		}
-	}
-	for _, m := range moved {
+// copy does the push: the session's own files replace what is there; what it
+// only refers to, and memory, keep a newer copy there, since another session
+// may be carrying on with them on that machine.
+func (plan pushPlan) copy(link remote) error {
+	for _, m := range plan.Moves {
 		if err := link.CopyTo(m.from, m.to); err != nil {
-			return 1, fmt.Errorf("copying the session: %w", err)
+			return fmt.Errorf("copying the session: %w", err)
 		}
 	}
-	if err := link.Copy(files); err != nil {
-		return 1, fmt.Errorf("copying the session: %w", err)
+	if err := link.Copy(plan.Files); err != nil {
+		return fmt.Errorf("copying the session: %w", err)
 	}
-	if memory != "" {
+	if len(plan.Referenced) > 0 {
+		if err := link.Copy(plan.Referenced, "--update"); err != nil {
+			return fmt.Errorf("copying what the session refers to: %w", err)
+		}
+	}
+	if plan.Memory != "" {
 		var err error
-		if relocated {
-			err = link.CopyTo(memory+"/", memoryThere+"/", "--update")
+		if plan.Relocated {
+			err = link.CopyTo(plan.Memory+"/", plan.MemoryThere+"/", "--update")
 		} else {
-			err = link.Copy([]string{memory}, "--update")
+			err = link.Copy([]string{plan.Memory}, "--update")
 		}
 		if err != nil {
-			return 1, fmt.Errorf("copying memory: %w", err)
+			return fmt.Errorf("copying memory: %w", err)
 		}
 	}
-	fmt.Fprintf(out, "Moved. Exit it here if it is still open; it now continues there:\n  ssh -t %s %s\n", opts.Host, shellQuote(resume))
-	if opts.Launch {
-		ssh, err := exec.LookPath("ssh")
-		if err != nil {
-			return 1, err
-		}
-		return 1, syscall.Exec(ssh, []string{"ssh", "-t", opts.Host, resume}, os.Environ())
+	return nil
+}
+
+// arrive runs the host's arrive hook there.
+func (plan pushPlan) arrive(link remote) error {
+	if err := link.Run(arriveCommand(plan.Hook, plan.There, plan.Resume)); err != nil {
+		return fmt.Errorf("the session is there, but the arrive hook failed: %w; resume it with:\n  ssh -t %s %s", err, plan.Host, shellQuote(plan.Resume))
 	}
-	return 0, nil
+	return nil
+}
+
+// arriveCommand fills a host's arrive hook. {resume}, {dir}, {title} and {id}
+// become one shell word each, so a hook uses them unquoted:
+//
+//	p=$(herdr tab create --label {title} --cwd {dir} | jq -r .result.root_pane.pane_id) && herdr pane run "$p" {resume}
+func arriveCommand(template string, session Session, resume string) string {
+	return strings.NewReplacer(
+		"{resume}", shellQuote(resume),
+		"{dir}", shellQuote(session.Directory),
+		"{title}", shellQuote(session.Title),
+		"{id}", shellQuote(session.ID),
+	).Replace(template)
 }
 
 // resumeCommand names the account home only for an isolated account: on the

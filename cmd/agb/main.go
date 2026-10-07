@@ -37,8 +37,10 @@ func run() (int, error) {
 		switch os.Args[1] {
 		case "setup", "plan", "sync":
 			return ocs.RunSetupCommand(os.Args[1], os.Args[2:], os.Stdout)
-		case "move":
-			return ocs.RunMoveCommand(os.Args[2:], os.Stdout)
+		case "push":
+			return ocs.RunPushCommand(os.Args[2:], os.Stdout)
+		case "pull":
+			return ocs.RunPullCommand(os.Args[2:], os.Stdout)
 		}
 	}
 	args := ocs.ParseArgs(os.Args[1:])
@@ -69,9 +71,14 @@ func run() (int, error) {
 	if args.Print {
 		save()
 		out := bufio.NewWriter(os.Stdout)
-		limit := min(25, len(sessions))
-		ocs.PrintSessions(out, sessions[:limit])
-		err := out.Flush()
+		if args.JSON {
+			err = ocs.WriteListing(out, sessions[:min(200, len(sessions))], ocs.ListingOpenPID())
+		} else {
+			ocs.PrintSessions(out, sessions[:min(25, len(sessions))])
+		}
+		if flushErr := out.Flush(); err == nil {
+			err = flushErr
+		}
 		<-saved
 		// `agb --print | head` closes the pipe early; that is the caller
 		// getting what they asked for, not a failure.
@@ -91,6 +98,9 @@ func run() (int, error) {
 		SkipPermissions: skipFor,
 		AfterFirstDraw:  save,
 		Layout:          ocs.LoadLayout(ocs.LayoutPath()),
+		Config:          config,
+		Hosts:           config.OtherHosts(),
+		Self:            ocs.MachineName(),
 		SaveLayout: func(layout ocs.Layout) {
 			_ = ocs.SaveLayout(ocs.LayoutPath(), layout)
 		},
@@ -103,10 +113,8 @@ func run() (int, error) {
 	}
 
 	<-saved
-	if picked.Mode == ocs.ModeMove {
-		// Leave the alternate screen's content behind a clean line.
-		fmt.Fprintln(os.Stdout)
-		return ocs.RunMoveDialog(picked.Session, config, os.Stdin, os.Stdout)
+	if picked.PulledFrom != "" {
+		fmt.Printf("Pulled %s %s from %s.\n", ocs.AccountLabel(picked.Session.Source, picked.Session.Account), picked.Session.Title, picked.PulledFrom)
 	}
 	skip := skipFor(picked.Target)
 	if picked.SkipPermissions != nil {

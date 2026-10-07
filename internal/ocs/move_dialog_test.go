@@ -56,19 +56,20 @@ func runDialog(t *testing.T, session Session, config Config, sshConfig, input st
 	link := &loopback{patch: map[string]string{"tool": "yes", "login": "yes"}}
 	var host string
 	var out bytes.Buffer
-	code, err := runMoveDialog(session, config, filepath.Join(filepath.Dir(sshConfig), "absent.json"), sshConfig,
+	code, err := runMoveDialog(session, config, sshConfig,
 		strings.NewReader(input), &out, func(h string) remote { host = h; return link })
 	return link, host, out.String(), code, err
 }
 
 func TestMoveDialogDefaults(t *testing.T) {
+	linuxOnly(t)
 	session, config, sshConfig, _ := dialogFixture(t)
-	// Enter: first configured host; Enter: same directory; Enter: move; Enter: don't launch.
-	link, host, out, code, err := runDialog(t, session, config, sshConfig, "\n\n\n\n")
+	// Enter: first configured host; Enter: same directory; Enter: push.
+	link, host, out, code, err := runDialog(t, session, config, sshConfig, "\n\n\n")
 	if code != 0 || err != nil {
 		t.Fatalf("%d %v\n%s", code, err, out)
 	}
-	if host != "desk" || !strings.Contains(out, "Directory on desk [~/phd]") || !strings.Contains(out, "Moved.") {
+	if host != "desk" || !strings.Contains(out, "Directory on desk [~/phd]") || !strings.Contains(out, "Pushed.") {
 		t.Fatalf("host %q\n%s", host, out)
 	}
 	if len(link.copies) == 0 || !strings.HasSuffix(link.copies[0][len(link.copies[0])-1], "s1.jsonl") {
@@ -77,6 +78,7 @@ func TestMoveDialogDefaults(t *testing.T) {
 }
 
 func TestMoveDialogSSHConfigAndTypedPath(t *testing.T) {
+	linuxOnly(t)
 	session, config, sshConfig, home := dialogFixture(t)
 	elsewhere := filepath.Join(home, "src", "phd")
 	if err := os.MkdirAll(elsewhere, 0o700); err != nil {
@@ -85,8 +87,8 @@ func TestMoveDialogSSHConfigAndTypedPath(t *testing.T) {
 	if err := os.Remove(session.Directory); err != nil { // not there: the path is asked for
 		t.Fatal(err)
 	}
-	// s: pick from ssh config; filter "dlt"; 1: the only match; type ~/src/phd; y; n.
-	link, host, out, code, err := runDialog(t, session, config, sshConfig, "s\ndlt\n1\n~/src/phd\ny\nn\n")
+	// s: pick from ssh config; filter "dlt"; 1: the only match; type ~/src/phd; y.
+	link, host, out, code, err := runDialog(t, session, config, sshConfig, "s\ndlt\n1\n~/src/phd\ny\n")
 	if host != "6genablers-dlt-1" {
 		t.Fatalf("host %q\n%s", host, out)
 	}
@@ -104,6 +106,7 @@ func TestMoveDialogSSHConfigAndTypedPath(t *testing.T) {
 }
 
 func TestMoveDialogDeclined(t *testing.T) {
+	linuxOnly(t)
 	session, config, sshConfig, _ := dialogFixture(t)
 	link, _, out, _, err := runDialog(t, session, config, sshConfig, "\n\nn\n")
 	if err != ErrCancelled || len(link.copies) != 0 {
