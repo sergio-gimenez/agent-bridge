@@ -270,3 +270,47 @@ func TestResumeCommand(t *testing.T) {
 		t.Error(got)
 	}
 }
+
+func TestAnchorAtHome(t *testing.T) {
+	got, err := anchorAtHome("/home/u", []string{"/home/u/.claude-cc2/projects/-p/s.jsonl", "/home/u/.agents/skills/x/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/home/u/./.claude-cc2/projects/-p/s.jsonl", "/home/u/./.agents/skills/x/"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %v", got)
+	}
+	for _, outside := range []string{"/etc/passwd", "/home/u", "/home/user2/x"} {
+		if _, err := anchorAtHome("/home/u", []string{outside}); err == nil {
+			t.Errorf("%s was accepted", outside)
+		}
+	}
+}
+
+// The copy itself, through real rsync into a stand-in "remote" home: the
+// failure this guards against (rsync recreating and touching /home) only shows
+// with a real rsync and --relative.
+func TestCopyKeepsBelowHome(t *testing.T) {
+	if _, err := exec.LookPath("rsync"); err != nil {
+		t.Skip("rsync not available")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	src := filepath.Join(home, ".claude-cc2", "projects", "-p", "s.jsonl")
+	writeFile(t, src, "{}\n")
+	dest := t.TempDir()
+	anchored, err := anchorAtHome(home, []string{src})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("rsync", append(append([]string{"-a", "--relative", "--"}, anchored...), dest+"/")...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rsync: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(dest, ".claude-cc2", "projects", "-p", "s.jsonl")); err != nil {
+		t.Fatalf("not copied below the destination home: %v", err)
+	}
+	if entries, _ := os.ReadDir(dest); len(entries) != 1 || entries[0].Name() != ".claude-cc2" {
+		t.Fatalf("copied more than the path below home: %v", entries)
+	}
+}

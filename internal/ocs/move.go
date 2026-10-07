@@ -71,10 +71,15 @@ func (r sshRemote) Copy(paths []string, extra ...string) error {
 	if len(paths) == 0 {
 		return nil
 	}
+	home := homeDir()
+	anchored, err := anchorAtHome(home, paths)
+	if err != nil {
+		return err
+	}
 	args := append([]string{"-a", "--relative"}, extra...)
 	args = append(args, "--")
-	args = append(args, paths...)
-	args = append(args, r.host+":/")
+	args = append(args, anchored...)
+	args = append(args, r.host+":"+home+"/")
 	cmd := exec.Command("rsync", args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
@@ -84,6 +89,22 @@ func (r sshRemote) Run(command string) error {
 	cmd := exec.Command("ssh", "-o", "BatchMode=yes", r.host, command)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
+}
+
+// anchorAtHome marks where --relative starts recreating directories: at home,
+// with rsync's /./ marker. From / it would recreate /home itself there, and
+// setting its times fails for a normal user (rsync exit 23). Both machines have
+// the same home (decideMove checks), so everything moved lives below it.
+func anchorAtHome(home string, paths []string) ([]string, error) {
+	var anchored []string
+	for _, path := range paths {
+		rel, ok := strings.CutPrefix(path, home+string(filepath.Separator))
+		if home == "" || !ok || rel == "" {
+			return nil, fmt.Errorf("%s is not under %s; agb move only copies files below home", path, home)
+		}
+		anchored = append(anchored, home+string(filepath.Separator)+"."+string(filepath.Separator)+rel)
+	}
+	return anchored, nil
 }
 
 // shellQuote makes any string one word for a POSIX shell.
