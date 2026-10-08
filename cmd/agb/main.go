@@ -41,6 +41,8 @@ func run() (int, error) {
 			return ocs.RunPushCommand(os.Args[2:], os.Stdout)
 		case "pull":
 			return ocs.RunPullCommand(os.Args[2:], os.Stdout)
+		case "open":
+			return runOpen(os.Args[2:])
 		}
 	}
 	args := ocs.ParseArgs(os.Args[1:])
@@ -123,6 +125,38 @@ func run() (int, error) {
 	return ocs.OpenWith(picked.Session, picked.Target, ocs.OpenOptions{
 		SkipPermissions: skip,
 		Fork:            picked.Mode == ocs.ModeFork,
+	})
+}
+
+// runOpen is Enter in the picker without the picker, so another program (a
+// launcher button, a script) can resume a session it found with --print.
+func runOpen(argv []string) (int, error) {
+	id, fork, args, err := ocs.ParseOpenArgs(argv)
+	if err != nil {
+		return 2, err
+	}
+	config := ocs.LoadConfig()
+	target, err := resolveTarget(config, args.Target)
+	if err != nil {
+		return 1, err
+	}
+
+	cache := ocs.OpenCache(ocs.CachePath(), args.Rescan)
+	sessions := cache.AllSessions(config, args.Search)
+	_ = cache.Save()
+	session, err := ocs.FindSession(sessions, id)
+	if err != nil {
+		return 1, err
+	}
+
+	mode := ocs.ModeResume
+	if fork {
+		mode = ocs.ModeFork
+	}
+	picked := ocs.EnterDestination(session, target, mode)
+	return ocs.OpenWith(picked.Session, picked.Target, ocs.OpenOptions{
+		SkipPermissions: config.DefaultSkipPermissions(args.SkipPermissions, picked.Target),
+		Fork:            fork,
 	})
 }
 

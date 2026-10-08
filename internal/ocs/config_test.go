@@ -49,6 +49,39 @@ func TestParseArgs(t *testing.T) {
 	}
 }
 
+func TestParseOpenArgs(t *testing.T) {
+	id, fork, options, err := ParseOpenArgs([]string{"--target", "CX2", "abc123", "--fork", "--yolo"})
+	if err != nil || id != "abc123" || !fork || options.Target != "cx2" ||
+		options.SkipPermissions == nil || !*options.SkipPermissions {
+		t.Fatalf("got %q %v %+v %v", id, fork, options, err)
+	}
+	// The target's value is not the id, wherever the flag sits.
+	if id, _, _, err := ParseOpenArgs([]string{"abc123", "--target", "cc1"}); err != nil || id != "abc123" {
+		t.Fatalf("got %q %v", id, err)
+	}
+	if _, _, _, err := ParseOpenArgs(nil); err == nil {
+		t.Fatal("no id should be an error")
+	}
+	if _, _, _, err := ParseOpenArgs([]string{"one", "two"}); err == nil {
+		t.Fatal("two ids should be an error")
+	}
+}
+
+func TestFindSession(t *testing.T) {
+	sessions := []Session{{ID: "abc123"}, {ID: "abd456"}, {ID: "ab"}}
+	for id, want := range map[string]string{"abc123": "abc123", "abc": "abc123", "abd": "abd456", "ab": "ab"} {
+		if got, err := FindSession(sessions, id); err != nil || got.ID != want {
+			t.Fatalf("%s: got %q %v, want %s", id, got.ID, err, want)
+		}
+	}
+	if _, err := FindSession(sessions, "a"); err == nil || !strings.Contains(err.Error(), "3 sessions") {
+		t.Fatalf("an ambiguous prefix should say so, got %v", err)
+	}
+	if _, err := FindSession(sessions, "zzz"); err == nil {
+		t.Fatal("an unknown id should be an error")
+	}
+}
+
 func TestParseConfig(t *testing.T) {
 	if !mustConfig(t, `{"skipPermissions":true}`).SkipPermissions || mustConfig(t, `{}`).SkipPermissions {
 		t.Fatal("skipPermissions")

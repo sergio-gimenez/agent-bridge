@@ -47,6 +47,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`agb open SESSION-ID`** does what `Enter` does in the picker, without the
+  picker, so a launcher button or script can resume a session it found with
+  `agb --print --json`. It takes the id or a unique prefix, `--target` to route
+  it elsewhere, `--fork`, and `--dangerous`/`--safe`.
 - **Push and pull sessions between your machines.** `Ctrl+O` in the picker opens
   a push panel in place of the card: it finds the project on the other machine,
   shows each check as it passes, says what will be sent, and pushes on `Enter`.

@@ -64,6 +64,35 @@ func ParseArgs(argv []string) Options {
 	return options
 }
 
+// ParseOpenArgs reads `agb open SESSION-ID [flags]`: the picker's flags plus
+// --fork, and exactly one session id.
+func ParseOpenArgs(argv []string) (id string, fork bool, options Options, err error) {
+	var flags []string
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
+		switch {
+		case arg == "--fork":
+			fork = true
+		case targetFlags[arg] || arg == "--query":
+			flags = append(flags, arg)
+			if i+1 < len(argv) {
+				i++
+				flags = append(flags, argv[i])
+			}
+		case strings.HasPrefix(arg, "-"):
+			flags = append(flags, arg)
+		case id != "":
+			return "", false, Options{}, fmt.Errorf("agb open takes one session id, got %q and %q", id, arg)
+		default:
+			id = arg
+		}
+	}
+	if id == "" {
+		return "", false, Options{}, fmt.Errorf("usage: agb open SESSION-ID [--target NAME] [--fork] [--dangerous|--safe]")
+	}
+	return id, fork, ParseArgs(flags), nil
+}
+
 func PrintHelp(out io.Writer) {
 	fmt.Fprint(out, strings.Join([]string{
 		"AgentBridge (agb)",
@@ -78,6 +107,7 @@ func PrintHelp(out io.Writer) {
 		"  agb --assistant",
 		"  agb --dangerous",
 		"  agb --target cx2",
+		"  agb open SESSION-ID [--target NAME] [--fork] [--dangerous|--safe]",
 		"  agb setup --example",
 		"  agb plan --profile development",
 		"  agb sync --profile development",
@@ -99,6 +129,10 @@ func PrintHelp(out io.Writer) {
 		"  --codex-account NAME  same thing, named for Codex accounts",
 		"  --rescan              ignore the session cache and rebuild it",
 		"  -h, --help            show help",
+		"",
+		"agb open does what Enter does in the picker, without the picker: the id",
+		"(or a unique prefix of it) as --print shows it, opened in its own account",
+		"unless --target says otherwise.",
 		"",
 		"Keys in the picker:",
 		"  type                  filter by title, directory and your prompts",
