@@ -124,6 +124,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Codex tables no longer end up inside an AgentBridge MCP block.** Codex adds
+  new tables (project trust, hook trust) after the last table but before
+  trailing comments, so a block at the end of `config.toml` swallowed them and
+  the next sync of that entry failed. Owned blocks are now written above the
+  first table AgentBridge does not own, a rewrite moves anything foreign out of
+  its markers, and `agb plan` shows a `repair` step for a file already in that
+  state.
 - Rows no longer advertise a route they are not going to take. While the target
   follows the selection, an unselected row used to render as `[OC→CX1]` because
   the target happened to sit on the highlighted Codex session; every badge now

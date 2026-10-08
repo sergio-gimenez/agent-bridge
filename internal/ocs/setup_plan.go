@@ -1,6 +1,7 @@
 package ocs
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -166,7 +167,8 @@ func (plan *SetupPlan) HasConflicts() bool {
 
 func (plan *SetupPlan) HasChanges() bool {
 	for _, step := range plan.Steps {
-		if step.Action == "add" || step.Action == "update" || step.Action == "remove" {
+		switch step.Action {
+		case "add", "update", "remove", "repair":
 			return true
 		}
 	}
@@ -409,6 +411,15 @@ func (plan *SetupPlan) planMCP(step *SetupStep, key string, mcp SetupMCP, tool S
 		}
 		if exists && nativeMCPMatches(current, desired, tool) {
 			step.Action = "present"
+			// Same entry, but the block may need moving: Codex can leave its
+			// own tables inside the markers (see placeCodexBlock).
+			if entry, ok := current.(map[string]any); ok && tool == SourceCodex && managed {
+				relaid, err := editNativeMCP(file.After, tool, step.Name, entry)
+				if err == nil && !bytes.Equal(relaid, file.After) {
+					step.Action = "repair"
+					file.After = relaid
+				}
+			}
 			return nil
 		}
 		if exists && !managed {
