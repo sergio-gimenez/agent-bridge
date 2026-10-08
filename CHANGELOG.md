@@ -47,6 +47,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Shared Claude Code memory across accounts.** A setup profile's
+  `"memory": {"share": ["cc1", "cc2"]}` keeps the first account's per-project
+  memory folders as the store and links every other account's to them, merging
+  what each already has first (new files move, `MEMORY.md` indexes are joined,
+  a file that differs is a conflict). `agb plan` shows a `memory` step per
+  project; nothing is deleted, the replaced folders go to the sync backups.
 - **`agb open SESSION-ID`** does what `Enter` does in the picker, without the
   picker, so a launcher button or script can resume a session it found with
   `agb --print --json`. It takes the id or a unique prefix, `--target` to route

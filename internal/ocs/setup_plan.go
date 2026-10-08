@@ -37,6 +37,7 @@ type SetupPlan struct {
 	Warnings    []string    `json:"warnings,omitempty"`
 	files       map[string]*setupFile
 	links       []setupLink
+	memory      []setupMemoryOp
 	state       setupState
 	statePath   string
 	stateBefore []byte
@@ -168,7 +169,7 @@ func (plan *SetupPlan) HasConflicts() bool {
 func (plan *SetupPlan) HasChanges() bool {
 	for _, step := range plan.Steps {
 		switch step.Action {
-		case "add", "update", "remove", "repair":
+		case "add", "update", "remove", "repair", "link", "move", "merge":
 			return true
 		}
 	}
@@ -292,6 +293,15 @@ func BuildSetupPlan(config Config, configPath, profileName, targetFilter string)
 				}
 				plan.Steps = append(plan.Steps, step)
 			}
+		}
+	}
+	if profile.Memory != nil {
+		shared, err := profile.Memory.validate(accounts, selected)
+		if err != nil {
+			return nil, err
+		}
+		if err := plan.planMemory(shared, targetFilter); err != nil {
+			return nil, err
 		}
 	}
 	return plan, nil

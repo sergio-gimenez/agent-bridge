@@ -154,6 +154,34 @@ Native configuration formats are documented by
 [OpenAI Docs for MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), and
 [OpenCode](https://opencode.ai/docs/mcp-servers/).
 
+## Share Claude Code memory between accounts
+
+Claude Code keeps its auto-memory per project, in
+`<config>/projects/<project>/memory/`, so two accounts (`CLAUDE_CONFIG_DIR`)
+each learn on their own. Name the accounts in a profile to give them one memory:
+
+```json
+"memory": { "share": ["cc1", "cc2"] }
+```
+
+The first account's folders are the real store; every other account's
+`projects/<project>/memory` becomes a link to it, for every project either
+account has memory in. Keep the store on the account whose config dir other
+tools read: the OpenCode and Codex memory plugins look in `~/.claude`.
+
+Memory an account already has is merged before it is linked. Files only it
+has move to the store, identical files are kept once, and the two `MEMORY.md`
+indexes are joined (the store's index stays as it is; entries for files it does
+not list are added). A file that differs between the accounts is a `conflict`
+naming it, and nothing is changed until you keep one version. Merging only
+moves files: the account's own index and its duplicates go to
+`sync-backups/memory/` next to the config, never deleted.
+
+A project an account starts later gets a real folder from Claude Code, not a
+link; the next `agb sync` merges and links it, so run it from a timer if you
+want that to happen on its own. Removing `memory` from the profile leaves the
+links in place.
+
 ## Existing configurations and agent-driven use
 
 The planner distinguishes additions, updates, removals, existing equivalent
