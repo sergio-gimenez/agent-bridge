@@ -191,15 +191,34 @@ A cross-account fork carries conversation text, not hidden model state or the
 source account's credentials. Both sessions still use the same working
 directory, so they see the same project files and Git worktree.
 
-## Add more accounts
+## Add another account
 
-Create another wrapper and config entry for each account:
+Adding an account later (here a third, `cc3`) is the same few steps whichever
+number it is. Do them in this order; every step can be re-run safely.
+
+### 1. Give it a wrapper and log in
 
 ```bash
 cc3() {
   CLAUDE_CONFIG_DIR="$HOME/.claude-cc3" command claude "$@"
 }
 ```
+
+Reload the shell, then authenticate with the new subscription's Claude account
+and check it is the one you meant:
+
+```bash
+cc3 auth login
+cc3 auth status
+```
+
+Settings are per account too, so copy the ones you rely on from another
+account's `settings.json` (for example `"theme": "auto"`) into
+`~/.claude-cc3/settings.json`.
+
+### 2. Tell `agb` about it
+
+Add the account to `claudeAccounts` in `~/.config/agentbridge/config.json`:
 
 ```json
 {
@@ -208,8 +227,58 @@ cc3() {
 }
 ```
 
-Authenticate it with `cc3 auth login`. `Ctrl+T` cycles through all configured
-accounts.
+That is all the picker needs: `agb --print` lists its sessions as `[CC3]`, and
+`Ctrl+T` and `agb --target cc3` reach it. Pick a name not used by any other
+tool's account; the names share one list of targets.
+
+### 3. Give it the shared setup
+
+If you keep skills, MCP servers or memory in a [setup profile](setup.md), add the
+account to that profile's `targets`, and to `memory.share` if the accounts share
+memory:
+
+```json
+"targets": ["oc", "cc1", "cc2", "cc3", "cx"],
+"memory": { "share": ["cc1", "cc2", "cc3"] }
+```
+
+Keep the store (the first `share` entry) where it is; a new account joins it.
+Preview, then apply:
+
+```bash
+agb plan     # cc3 rows: skills and MCPs to add, memory folders to link
+agb sync
+agb plan     # every cc3 row now reads "present"
+```
+
+A brand-new account has no memory of its own, so it only gets links: it starts
+with everything the other accounts already learned. An account that already
+has memory is merged into the store first (see [setup.md](setup.md)).
+
+### 4. Re-install per-account integrations
+
+Anything that installs itself into a Claude config dir does so for one account
+at a time: hooks in `settings.json`, status lines, plugins, and tools that read
+transcripts from `projects/`. Install them again with the new account's
+`CLAUDE_CONFIG_DIR`, for example a terminal multiplexer's session hook:
+
+```bash
+CLAUDE_CONFIG_DIR=~/.claude-cc3 herdr integration install claude
+```
+
+A transcript viewer that only knows `~/.claude/projects` needs
+`~/.claude-cc3/projects` added to its list of roots.
+
+### 5. Check
+
+```bash
+cc3 auth status                  # logged in, the right account
+agb --print --target cc3         # agb accepts the target
+agb plan | grep cc3              # nothing left to add or link
+```
+
+The new account shows sessions in the picker once it has run one
+conversation; until then only its target exists.
 
 ## Troubleshooting
 

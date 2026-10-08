@@ -47,6 +47,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `docs/multiple-claude-accounts.md` walks through adding another account
+  end to end: wrapper and login, `claudeAccounts`, setup profile targets and
+  `memory.share`, `agb plan`/`agb sync`, and per-account integrations.
 - **Shared Claude Code memory across accounts.** A setup profile's
   `"memory": {"share": ["cc1", "cc2"]}` keeps the first account's per-project
   memory folders as the store and links every other account's to them, merging
