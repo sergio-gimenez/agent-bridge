@@ -131,6 +131,9 @@ opencode --session <id> --fork
 codex fork <id>
 ```
 
+`opencode --session <id> --fork` is OpenCode 1; OpenCode 2's TUI has no fork
+flag, so there a fork takes the transcript-seeded path below.
+
 Ids don't survive a hop between tools or between accounts, so across one of those
 both `Ctrl+F` and `Enter` fall back to the transcript-seeded path below. That
 path is already a fork; the original never changes either way.

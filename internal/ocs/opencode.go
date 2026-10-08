@@ -38,12 +38,65 @@ type opencodeRow struct {
 	TimeUpdated int64
 }
 
+// opencodeTables reports which session stores the database has. OpenCode 2
+// moved sessions into session_v2 and session_message; a migrated database
+// keeps the old session, message and part tables beside them.
+func opencodeTables(db *sql.DB) (legacy, v2 bool, err error) {
+	rows, err := db.Query(`select name from sqlite_master where type = 'table' and name in ('session', 'session_v2')`)
+	if err != nil {
+		return false, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false, false, err
+		}
+		legacy, v2 = legacy || name == "session", v2 || name == "session_v2"
+	}
+	return legacy, v2, rows.Err()
+}
+
+// opencodeV2 is true when the store is OpenCode 2's, and so is the CLI that
+// writes it: no --fork on the TUI, `session export`, --prompt for a new
+// session.
+func opencodeV2() bool {
+	db, err := openOpencodeDB(OpencodeDBPath())
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	_, v2, _ := opencodeTables(db)
+	return v2
+}
+
 func listOpencodeSessions(db *sql.DB, limit int) ([]opencodeRow, error) {
+	legacy, v2, err := opencodeTables(db)
+	if err != nil {
+		return nil, err
+	}
+	// A session whose first turn failed has no title yet; one NULL must not
+	// fail the scan and with it every OpenCode session.
+	const columns = `id, coalesce(title, '') as title, coalesce(directory, '') as directory,
+		coalesce(project_id, '') as project_id, time_updated`
+	var stores []string
+	if v2 {
+		stores = append(stores, `select `+columns+` from session_v2 where time_archived is null`)
+	}
+	if legacy {
+		stores = append(stores, `select `+columns+` from session where time_archived is null`)
+	}
+	if len(stores) == 0 {
+		return nil, nil
+	}
+	// The migration copied every session into session_v2, and one left open in
+	// an old OpenCode can keep going in the old table: one row per id, the
+	// newer one (SQLite takes the bare columns from the max() row).
 	rows, err := db.Query(`
-		select id, title, directory, project_id, time_updated
-		from session
-		where time_archived is null
-		order by time_updated desc
+		select id, title, directory, project_id, max(time_updated)
+		from (`+strings.Join(stores, " union all ")+`)
+		group by id
+		order by max(time_updated) desc
 		limit ?`, limit)
 	if err != nil {
 		return nil, err
@@ -74,21 +127,96 @@ func parseTextPart(raw string) string {
 	return CollapseWhitespace(text)
 }
 
-// latestTexts returns, per session, the newest text parts written in the given
-// role, newest first.
+// latestTexts returns, per session, the newest texts written in the given
+// role, newest first: from session_message where OpenCode 2 keeps them, from
+// message and part for sessions only the old store has.
 func latestTexts(db *sql.DB, ids []string, role Role) (map[string][]string, error) {
 	texts := map[string][]string{}
 	if len(ids) == 0 {
 		return texts, nil
 	}
+	legacy, v2, err := opencodeTables(db)
+	if err != nil {
+		return nil, err
+	}
+	missing := ids
+	if v2 {
+		if err := latestTextsV2(db, ids, role, texts); err != nil {
+			return nil, err
+		}
+		missing = nil
+		for _, id := range ids {
+			if len(texts[id]) == 0 {
+				missing = append(missing, id)
+			}
+		}
+	}
+	if legacy && len(missing) > 0 {
+		if err := latestTextsLegacy(db, missing, role, texts); err != nil {
+			return nil, err
+		}
+	}
+	return texts, nil
+}
 
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+func inPlaceholders(ids []string) (string, []any) {
 	args := make([]any, 0, len(ids)+2)
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	args = append(args, string(role), promptLimit)
+	return strings.TrimSuffix(strings.Repeat("?,", len(ids)), ","), args
+}
 
+func collectTexts(rows *sql.Rows, texts map[string][]string, parse func(string) string) error {
+	defer rows.Close()
+	for rows.Next() {
+		var id, raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			return err
+		}
+		if text := parse(raw); text != "" {
+			texts[id] = append(texts[id], text)
+		}
+	}
+	return rows.Err()
+}
+
+// OpenCode 2 writes a user message's text on the message itself and an
+// assistant's as text items of its content.
+func latestTextsV2(db *sql.DB, ids []string, role Role, texts map[string][]string) error {
+	placeholders, args := inPlaceholders(ids)
+	text := `json_extract(m.data, '$.text')`
+	from := `session_message m`
+	if role == RoleAssistant {
+		text = `json_extract(c.value, '$.text')`
+		from = `session_message m join json_each(m.data, '$.content') c
+			on json_extract(c.value, '$.type') = 'text'`
+	}
+	args = append(args, string(role), promptLimit)
+	rows, err := db.Query(fmt.Sprintf(`
+		select ranked.session_id, ranked.text
+		from (
+			select
+				m.session_id as session_id,
+				%s as text,
+				row_number() over (
+					partition by m.session_id
+					order by m.time_created desc, m.seq desc
+				) as rank
+			from %s
+			where m.session_id in (%s) and m.type = ? and %s is not null
+		) ranked
+		where ranked.rank <= ?
+		order by ranked.session_id, ranked.rank`, text, from, placeholders, text), args...)
+	if err != nil {
+		return err
+	}
+	return collectTexts(rows, texts, CollapseWhitespace)
+}
+
+func latestTextsLegacy(db *sql.DB, ids []string, role Role, texts map[string][]string) error {
+	placeholders, args := inPlaceholders(ids)
+	args = append(args, string(role), promptLimit)
 	rows, err := db.Query(fmt.Sprintf(`
 		select ranked.session_id, ranked.text
 		from (
@@ -108,20 +236,9 @@ func latestTexts(db *sql.DB, ids []string, role Role) (map[string][]string, erro
 		where ranked.rank <= ?
 		order by ranked.session_id, ranked.rank`, placeholders), args...)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id, raw string
-		if err := rows.Scan(&id, &raw); err != nil {
-			return nil, err
-		}
-		if text := parseTextPart(raw); text != "" {
-			texts[id] = append(texts[id], text)
-		}
-	}
-	return texts, rows.Err()
+	return collectTexts(rows, texts, parseTextPart)
 }
 
 func opencodeSession(row opencodeRow, cached cachedOpencode, scope SearchScope) Session {

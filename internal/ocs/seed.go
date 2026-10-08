@@ -57,9 +57,14 @@ func (transcript *sessionTranscript) saveSummary(text string) {
 
 // --- OpenCode transcript (via `opencode export`) -------------------------
 
+// OpenCode 1 exports {info, parts} per message; OpenCode 2 puts the kind and
+// the text on the message itself, and the directory under info.location.
 type exportedSession struct {
 	Info *struct {
 		Directory string `json:"directory"`
+		Location  *struct {
+			Directory string `json:"directory"`
+		} `json:"location"`
 	} `json:"info"`
 	Messages []struct {
 		Info *struct {
@@ -71,6 +76,15 @@ type exportedSession struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"parts"`
+
+		Type    string `json:"type"`
+		Text    string `json:"text"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		Status  string `json:"status"`
+		Summary string `json:"summary"`
 	} `json:"messages"`
 }
 
@@ -81,12 +95,43 @@ func parseOpencodeTranscript(raw []byte) (sessionTranscript, error) {
 	if err := json.Unmarshal(raw, &exported); err != nil {
 		return sessionTranscript{}, err
 	}
-	if exported.Info == nil || exported.Info.Directory == "" {
+	directory := ""
+	if exported.Info != nil {
+		directory = exported.Info.Directory
+		if directory == "" && exported.Info.Location != nil {
+			directory = exported.Info.Location.Directory
+		}
+	}
+	if directory == "" {
 		return sessionTranscript{}, fmt.Errorf("Exported OpenCode session has no directory.")
 	}
-	transcript := sessionTranscript{Directory: exported.Info.Directory, Export: raw}
+	transcript := sessionTranscript{Directory: directory, Export: raw}
 	for _, message := range exported.Messages {
-		if message.Info == nil || (message.Info.Role != "user" && message.Info.Role != "assistant") {
+		if message.Info == nil {
+			// OpenCode 2.
+			switch message.Type {
+			case "user":
+				if strings.TrimSpace(message.Text) != "" {
+					transcript.Turns = append(transcript.Turns, Turn{Role: RoleUser, Text: message.Text})
+				}
+			case "assistant":
+				var texts []string
+				for _, item := range message.Content {
+					if item.Type == "text" {
+						texts = append(texts, item.Text)
+					}
+				}
+				if text := strings.Join(texts, "\n\n"); strings.TrimSpace(text) != "" {
+					transcript.Turns = append(transcript.Turns, Turn{Role: RoleAssistant, Text: text})
+				}
+			case "compaction":
+				if message.Status == "completed" && strings.TrimSpace(message.Summary) != "" {
+					transcript.saveSummary(message.Summary)
+				}
+			}
+			continue
+		}
+		if message.Info.Role != "user" && message.Info.Role != "assistant" {
 			continue
 		}
 		var texts []string
@@ -111,14 +156,29 @@ func parseOpencodeTranscript(raw []byte) (sessionTranscript, error) {
 }
 
 func opencodeTranscript(id string) (sessionTranscript, error) {
-	var stdout bytes.Buffer
-	command := exec.Command("opencode", "export", id)
-	command.Stdout = &stdout
+	args := []string{"export", id}
+	if opencodeV2() {
+		args = []string{"session", "export", id}
+	}
+	// A file, not a pipe: OpenCode 2 exits before a pipe drains, so a piped
+	// export stops at 256 KiB and reads as broken JSON.
+	out, err := os.CreateTemp("", "agb-opencode-export-*.json")
+	if err != nil {
+		return sessionTranscript{}, err
+	}
+	defer os.Remove(out.Name())
+	defer out.Close()
+	command := exec.Command("opencode", args...)
+	command.Stdout = out
 	command.Stderr = os.Stderr
 	if err := command.Run(); err != nil {
 		return sessionTranscript{}, fmt.Errorf("Failed to export OpenCode session %s.", id)
 	}
-	transcript, err := parseOpencodeTranscript(exportBanner.ReplaceAll(stdout.Bytes(), nil))
+	raw, err := os.ReadFile(out.Name())
+	if err != nil {
+		return sessionTranscript{}, err
+	}
+	transcript, err := parseOpencodeTranscript(exportBanner.ReplaceAll(raw, nil))
 	if err != nil {
 		return sessionTranscript{}, fmt.Errorf("Could not read the export of OpenCode session %s: %w", id, err)
 	}

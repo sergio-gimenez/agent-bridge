@@ -176,6 +176,16 @@ func OpenCodexSession(id, directory string, opts OpenOptions) (int, error) {
 // Codex, so open a fresh session in the target tool seeded with the transcript.
 
 func OpenOpencodeFresh(directory, prompt string, opts OpenOptions) (int, error) {
+	if opencodeV2() {
+		// OpenCode 2's run is headless and has no --dir. The TUI takes the
+		// directory as its argument and puts --prompt in its composer, where
+		// Enter sends it.
+		var args []string
+		if opts.SkipPermissions {
+			args = append(args, "--auto")
+		}
+		return launch("opencode", append(args, "--prompt", prompt, directory), directory, nil)
+	}
 	args := []string{"run"}
 	if opts.SkipPermissions {
 		args = append(args, "--auto")
@@ -226,7 +236,10 @@ func FindSession(sessions []Session, id string) (Session, error) {
 func OpenWith(session Session, target Account, opts OpenOptions) (int, error) {
 	opts.Account = &target
 
-	if IsNativeTarget(&session, &target) {
+	// OpenCode 2's TUI has no --fork (only its headless run does), so a fork
+	// there takes the seeded route below, like any other new session.
+	opencodeSeedFork := target.Tool == SourceOpencode && opts.Fork && opencodeV2()
+	if IsNativeTarget(&session, &target) && !opencodeSeedFork {
 		switch target.Tool {
 		case SourceClaude:
 			return OpenClaudeSession(session.ID, session.Directory, opts)

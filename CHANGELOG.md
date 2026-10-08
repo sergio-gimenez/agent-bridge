@@ -124,6 +124,20 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **OpenCode 2 sessions show up again.** OpenCode 2 keeps sessions in
+  `session_v2` and `session_message`; AgentBridge read only the old tables, so
+  it missed every session since the upgrade, and a store without the old
+  tables (a fresh OpenCode 2 install) listed none. Both stores are read now,
+  the newer row winning for a migrated session. One untitled session (its
+  first turn failed) no longer hides every OpenCode session.
+- **Opening into OpenCode 2 follows its CLI.** A new seeded session opens the
+  TUI with `--prompt` (OpenCode 2's `run` is headless and has no `--dir`), a
+  fork takes the seeded route because the TUI has no `--fork`, and the
+  transcript comes from `opencode session export`, read from a file because
+  OpenCode 2 cuts a piped export off at 256 KiB.
+- `agb --print --json` lists OpenCode sessions too, so a local launcher can
+  offer them; `agb pull` still leaves them out, since a database row cannot
+  travel. `opencode --session <id>` counts as the session being open.
 - **Codex tables no longer end up inside an AgentBridge MCP block.** Codex adds
   new tables (project trust, hook trust) after the last table but before
   trailing comments, so a block at the end of `config.toml` swallowed them and

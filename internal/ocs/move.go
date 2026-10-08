@@ -108,8 +108,8 @@ func (p procs) open(home string, session Session) int {
 }
 
 // resumeFlags are the arguments that put a session id next on a tool's command
-// line: claude --resume/-r <id>, codex resume <id>.
-var resumeFlags = map[string]bool{"--resume": true, "-r": true, "resume": true}
+// line: claude --resume/-r <id>, codex resume <id>, opencode --session/-s <id>.
+var resumeFlags = map[string]bool{"--resume": true, "-r": true, "resume": true, "--session": true, "-s": true}
 
 // procStart returns field 22 of /proc/<pid>/stat, the process start time.
 func procStart(pid int) (string, bool) {
