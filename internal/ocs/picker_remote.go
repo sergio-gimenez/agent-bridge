@@ -40,6 +40,29 @@ type pushPanel struct {
 	// Bumped by every check or push, so a result that comes back after the
 	// host was switched is dropped.
 	gen int
+	// No to copying the project over: the question goes, ^p still does it.
+	declined bool
+	// Where the question's buttons were last drawn, for clicks.
+	buttons []panelButton
+}
+
+// panelButton is a clickable stretch of one line of a panel or card body:
+// the line's index, and the first and last cell counted from where the body's
+// content starts.
+type panelButton struct {
+	row, start, end int
+	key             Key
+}
+
+// asking reports whether the panel asks to copy the project over: it is
+// missing there and that is all that stops the push.
+func (panel *pushPanel) asking() bool {
+	return panel.state == panelReady && panel.plan.offersDirCopy() && !panel.declined
+}
+
+// typed reports a plain letter key, typed or clicked in the footer.
+func typed(key Key, letter string) bool {
+	return key.Text == letter || !key.Ctrl && key.Name == letter
 }
 
 type remoteView struct {
@@ -51,9 +74,18 @@ type remoteView struct {
 	// Why the last pull did not happen.
 	notice []string
 	// The session whose pull stopped only because its project is not here,
-	// which ^p copies over.
-	copyOffer string
-	gen       int
+	// which ^p copies over, and whether the question about it was put away.
+	copyOffer    string
+	copyDeclined bool
+	// Where the question's buttons were last drawn, for clicks.
+	buttons []panelButton
+	gen     int
+}
+
+// asking reports whether the card asks to copy the selected session's project
+// over and pull it.
+func (v *remoteView) asking(selected *Session) bool {
+	return selected != nil && selected.ID == v.copyOffer && !v.copyDeclined && !v.pulling
 }
 
 func (v *remoteView) host() string { return v.hosts[v.index] }
@@ -105,7 +137,7 @@ func (p *picker) checkPanel(findDirs bool) {
 	panel := p.panel
 	panel.gen++
 	gen := panel.gen
-	panel.state, panel.plan, panel.err, panel.status = panelChecking, nil, "", nil
+	panel.state, panel.plan, panel.err, panel.status, panel.declined = panelChecking, nil, "", nil, false
 	host, session, config := panel.hosts[panel.host], panel.session, p.options.Config
 	dirs, dir := panel.dirs, ""
 	if !findDirs && len(dirs) > 0 {
@@ -247,7 +279,13 @@ func (p *picker) handlePanel(key Key) (*PickResult, error) {
 			p.panel = nil
 		case panel.state == panelReady && len(panel.plan.Decision.Blockers) == 0:
 			p.push()
+		case panel.asking():
+			p.copyDirAndPush()
 		}
+	case typed(key, "y") && panel.asking():
+		p.copyDirAndPush()
+	case typed(key, "n") && panel.asking():
+		panel.declined = true
 	case (key.Name == "left" || key.Name == "right") && settled && len(panel.hosts) > 1:
 		step := 1
 		if key.Name == "left" {
@@ -350,7 +388,7 @@ func (p *picker) pullSelected(copyDir bool) {
 			if code != 0 || err != nil {
 				view.notice = stopLines(out.String(), err)
 				if offered && !copyDir {
-					view.copyOffer = session.ID
+					view.copyOffer, view.copyDeclined = session.ID, false
 				}
 				return
 			}
@@ -385,8 +423,14 @@ func (p *picker) handleBrowsing(key Key) (result *PickResult, handled bool) {
 	case key.Name == "escape":
 		p.goHome()
 	case key.Name == "enter":
-		p.pullSelected(false)
+		p.pullSelected(p.view.asking(p.selected()))
 		return p.done, true
+	// While the card asks, y and n answer it rather than filter the list.
+	case typed(key, "y") && p.view.asking(p.selected()):
+		p.pullSelected(true)
+		return p.done, true
+	case typed(key, "n") && p.view.asking(p.selected()):
+		p.view.copyDeclined = true
 	case key.Ctrl && key.Name == "p":
 		if selected := p.selected(); selected != nil && selected.ID == p.view.copyOffer {
 			p.pullSelected(true)
@@ -473,7 +517,12 @@ func (p *picker) renderPanel(width, height int) []string {
 				wrapped("!", line, yellow)
 			}
 			for _, line := range plan.Decision.Blockers {
-				wrapped("✗", strings.Replace(line, " (--force to push anyway)", "", 1), red)
+				line = strings.Replace(line, " (--force to push anyway)", "", 1)
+				if panel.asking() {
+					// The question below offers the copy; the rsync line is noise here.
+					line, _, _ = strings.Cut(line, "; clone or create it first")
+				}
+				wrapped("✗", line, red)
 			}
 		}
 		for _, line := range panel.status {
@@ -494,11 +543,68 @@ func (p *picker) renderPanel(width, height int) []string {
 			add(dim("then  ") + "resume it there with ssh -t " + plan.Host)
 		}
 	}
+	panel.buttons = nil
+	if panel.asking() {
+		body = p.askCopy(panel, body, inner, height)
+	}
 	title := "Push"
 	if host != "" {
 		title = "Push to " + host
 	}
 	return boxed(title, body, width, height)
+}
+
+// askCopy adds the question whether to copy the project over and push.
+func (p *picker) askCopy(panel *pushPanel, body []string, inner, height int) []string {
+	plan := panel.plan
+	question := fmt.Sprintf("%s is not on %s. Clone it there, or copy it over now with rsync and push?", ShortenHome(plan.RemoteDir), plan.Host)
+	body = append(body, "")
+	lines, buttons := questionBox(question, "Copy & push", inner, len(body))
+	for _, b := range buttons {
+		if b.row < height-2 { // drawn, not cut off below the panel
+			panel.buttons = append(panel.buttons, b)
+		}
+	}
+	return append(body, lines...)
+}
+
+// questionBox draws a yes/no question in a frame of its own, inner cells
+// wide, with yes and "Not now" buttons under it. Its first line goes at index
+// line of a panel or card body; it returns where the buttons land there.
+func questionBox(question, yes string, inner, line int) ([]string, []panelButton) {
+	frame := accent
+	width := inner - 4 // inside the question's own "│ " and " │"
+	lines := []string{frame("╭" + strings.Repeat("─", inner-2) + "╮")}
+	row := func(content string) { lines = append(lines, frame("│")+" "+padLine(content, width)+" "+frame("│")) }
+	for _, text := range wrapText(question, width) {
+		row(text)
+	}
+	row("")
+	choices := []struct {
+		label string
+		draw  func(string) string
+		key   Key
+	}{
+		{" " + yes + " ", func(v string) string { return style("1;7;36", v) }, Key{Name: "enter"}},
+		{" Not now ", func(v string) string { return style("7", v) }, Key{Text: "n"}},
+	}
+	var buttons []panelButton
+	text, used := "", 0
+	for _, c := range choices {
+		cells := visibleWidth(c.label)
+		if used > 0 && used+2+cells > width {
+			row(text)
+			text, used = "", 0
+		}
+		if used > 0 {
+			text, used = text+"  ", used+2
+		}
+		start := 2 + used // past the question's own "│ "
+		buttons = append(buttons, panelButton{line + len(lines), start, start + cells - 1, c.key})
+		text, used = text+c.draw(c.label), used+cells
+	}
+	row(text)
+	return append(lines, frame("╰"+strings.Repeat("─", inner-2)+"╯")), buttons
 }
 
 // sends names what a push carries, briefly.
@@ -537,10 +643,12 @@ func boxed(title string, body []string, width, height int) []string {
 }
 
 // remoteCardLines is what the card says about a session on another machine,
-// above its prompts.
-func (p *picker) remoteCardLines(session *Session, inner int) []string {
+// above its prompts, starting at index top of the card's body.
+func (p *picker) remoteCardLines(session *Session, inner, top int) []string {
 	view := p.view
 	host := view.host()
+	asking := view.asking(session)
+	view.buttons = nil
 	var lines []string
 	switch {
 	case view.pulling:
@@ -555,9 +663,19 @@ func (p *picker) remoteCardLines(session *Session, inner int) []string {
 		if strings.HasPrefix(notice, "!") {
 			color = yellow
 		}
+		if asking {
+			// The question below offers the copy; the rsync line is noise here.
+			notice, _, _ = strings.Cut(notice, "; clone or create it first")
+		}
 		for _, line := range wrapText(notice, inner) {
 			lines = append(lines, color(line))
 		}
+	}
+	if asking {
+		question := fmt.Sprintf("%s is not on this machine. Clone it here, or copy it over from %s now with rsync and pull?", ShortenHome(session.Directory), host)
+		lines = append(lines, "")
+		box, buttons := questionBox(question, "Copy & pull", inner, top+len(lines))
+		lines, view.buttons = append(lines, box...), buttons
 	}
 	return lines
 }

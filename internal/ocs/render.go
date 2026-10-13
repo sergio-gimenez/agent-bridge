@@ -430,7 +430,7 @@ func (p *picker) renderCard(session *Session, target *Account, width, height int
 		}, " · ")
 		body = append(body, dim(highlightTerms(truncatePlain(meta, inner), terms)))
 		if p.view != nil {
-			body = append(body, p.remoteCardLines(session, inner)...)
+			body = append(body, p.remoteCardLines(session, inner, len(body))...)
 		}
 
 		if target != nil && !IsNativeTarget(session, target) {
@@ -497,7 +497,10 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 			enter = hint{"●", "open on " + p.view.host()}
 		}
 		hints := []hint{enter}
-		if selected != nil && selected.ID == p.view.copyOffer {
+		switch {
+		case p.view.asking(selected):
+			hints = []hint{{"enter", "copy & pull"}, {"n", "not now"}}
+		case selected != nil && selected.ID == p.view.copyOffer:
 			hints = append(hints, hint{"^p", "copy project here & pull"})
 		}
 		return fitHints(append(hints, hint{"^r", next}, hint{"esc", "home"}), width)
@@ -553,7 +556,10 @@ func (p *picker) panelHints() []hint {
 	if panel.plan.LocalPID > 0 {
 		hints = append(hints, hint{"^k", "stop it here & push"})
 	}
-	if panel.plan.offersDirCopy() {
+	switch {
+	case panel.asking():
+		hints = append(hints, hint{"enter", "copy & push"}, hint{"n", "not now"})
+	case panel.plan.offersDirCopy():
 		hints = append(hints, hint{"^p", "copy project there & push"})
 	}
 	if len(panel.hosts) > 1 {

@@ -175,43 +175,86 @@ func TestPushPanelStopsTheLocalSession(t *testing.T) {
 	}
 }
 
-// The project is not there: ^p copies it over, checks again and pushes.
+// The project is not there: the panel asks to copy it over. Enter copies it,
+// checks again and pushes; n puts the question away and leaves ^p.
 func TestPushPanelCopiesTheProject(t *testing.T) {
 	linuxOnly(t)
-	p, link, _, session := remoteFixture(t)
-	link.patch["dir"] = "no"
-	link.copied = func() { delete(link.patch, "dir") }
-	press(t, p, ctrlO)
-	if got := screen(p); !strings.Contains(got, "✗ ~/phd does not exist on desk") || !strings.Contains(got, "^p copy project there & push") || strings.Contains(got, "enter push") {
-		t.Fatalf("project missing there:\n%s", got)
-	}
-	press(t, p, ctrlP)
-	if len(link.copies) < 2 || strings.Join(link.copies[0], " ") != "--info=progress2 "+session.Directory+"/ -> "+session.Directory+"/" ||
-		!strings.Contains(screen(p), "Pushed to desk") {
-		t.Fatalf("copies %v\n%s", link.copies, screen(p))
+	for _, answer := range []string{"enter", "n then ^p"} {
+		p, link, _, session := remoteFixture(t)
+		link.patch["dir"] = "no"
+		link.copied = func() { delete(link.patch, "dir") }
+		press(t, p, ctrlO)
+		got := screen(p)
+		for _, want := range []string{"✗ ~/phd does not exist on desk ", "~/phd is not on desk. Clone it there", "Copy & push", "Not now", "enter copy & push", "n not now"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("%s: the question lacks %q:\n%s", answer, want, got)
+			}
+		}
+		if strings.Contains(got, "rsync -a") || strings.Contains(got, "enter push") {
+			t.Fatalf("%s: rsync line or push offered while asking:\n%s", answer, got)
+		}
+		switch answer {
+		case "enter":
+			press(t, p, enter)
+		default:
+			press(t, p, Key{Text: "n"})
+			if got := screen(p); strings.Contains(got, "Copy & push") || !strings.Contains(got, "^p copy project there & push") || len(link.copies) != 0 {
+				t.Fatalf("after n:\n%s", got)
+			}
+			press(t, p, ctrlP)
+		}
+		if len(link.copies) < 2 || strings.Join(link.copies[0], " ") != "--info=progress2 "+session.Directory+"/ -> "+session.Directory+"/" ||
+			!strings.Contains(screen(p), "Pushed to desk") {
+			t.Fatalf("%s: copies %v\n%s", answer, link.copies, screen(p))
+		}
 	}
 }
 
-// The project is not here: the pull stops, and ^p copies it over and pulls.
+// The project is not here: the pull stops and the card asks to copy it over.
+// Enter copies it and pulls; n puts the question away and leaves ^p.
 func TestBrowseAndPullCopiesTheProject(t *testing.T) {
 	linuxOnly(t)
-	p, link, _, session := remoteFixture(t)
-	var listing bytes.Buffer
-	if err := WriteListing(&listing, []Session{session}, func(Session) int { return 0 }); err != nil {
-		t.Fatal(err)
-	}
-	cannedListing = listing.String()
-	// The transcript there names a directory this machine does not have.
-	elsewhere := filepath.Join(filepath.Dir(session.Directory), "elsewhere")
-	link.patch["cwd"], link.patch["dir"] = elsewhere, "yes"
+	for _, answer := range []string{"enter", "n then ^p"} {
+		p, link, _, session := remoteFixture(t)
+		// The session there is in a directory this machine does not have.
+		elsewhere := filepath.Join(filepath.Dir(session.Directory), "elsewhere")
+		there := session
+		there.Directory = elsewhere
+		var listing bytes.Buffer
+		if err := WriteListing(&listing, []Session{there}, func(Session) int { return 0 }); err != nil {
+			t.Fatal(err)
+		}
+		cannedListing = listing.String()
+		link.patch["cwd"], link.patch["dir"] = elsewhere, "yes"
 
-	press(t, p, ctrlR, enter)
-	if got := screen(p); p.done != nil || !strings.Contains(got, "~/elsewhere does not exist here") || !strings.Contains(got, "^p copy project here & pull") {
-		t.Fatalf("project missing here:\n%s", got)
-	}
-	if result := press(t, p, ctrlP); result == nil || result.PulledFrom != "desk" ||
-		len(link.fetches) == 0 || strings.Join(link.fetches[0], " ") != "--info=progress2 "+elsewhere+"/ -> "+elsewhere+"/" {
-		t.Fatalf("result %+v, fetches %v", result, link.fetches)
+		press(t, p, ctrlR, enter)
+		got := screen(p)
+		if p.done != nil || len(link.fetches) != 0 {
+			t.Fatalf("%s: pulled without the project:\n%s", answer, got)
+		}
+		for _, want := range []string{"✗ ~/elsewhere does not exist here ", "~/elsewhere is not on this machine. Clone it here", "Copy & pull", "Not now", "enter copy & pull", "n not now"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("%s: the question lacks %q:\n%s", answer, want, got)
+			}
+		}
+		if strings.Contains(got, "rsync -a") {
+			t.Fatalf("%s: rsync line while asking:\n%s", answer, got)
+		}
+		var result *PickResult
+		switch answer {
+		case "enter":
+			result = press(t, p, enter)
+		default:
+			press(t, p, Key{Text: "n"})
+			if got := screen(p); strings.Contains(got, "Copy & pull") || !strings.Contains(got, "^p copy project here & pull") || len(link.fetches) != 0 {
+				t.Fatalf("after n:\n%s", got)
+			}
+			result = press(t, p, ctrlP)
+		}
+		if result == nil || result.PulledFrom != "desk" ||
+			len(link.fetches) == 0 || strings.Join(link.fetches[0], " ") != "--info=progress2 "+elsewhere+"/ -> "+elsewhere+"/" {
+			t.Fatalf("%s: result %+v, fetches %v", answer, result, link.fetches)
+		}
 	}
 }
 
