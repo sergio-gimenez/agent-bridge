@@ -78,6 +78,7 @@ func PrintHelp(out io.Writer) {
 		"  agb --assistant",
 		"  agb --dangerous",
 		"  agb --target cx2",
+		"  agb new [--target NAME] [--dir DIR] [--dangerous|--safe]",
 		"  agb setup --example",
 		"  agb plan --profile development",
 		"  agb sync --profile development",
@@ -100,11 +101,16 @@ func PrintHelp(out io.Writer) {
 		"  --rescan              ignore the session cache and rebuild it",
 		"  -h, --help            show help",
 		"",
+		"agb new starts a blank conversation; without --target it opens an account",
+		"and directory chooser. The directory defaults to your current directory.",
+		"",
 		"Keys in the picker:",
 		"  type                  filter by title, directory and your prompts",
 		"  up/down, PgUp/PgDn    move the selection",
 		"  Enter                 follow the route shown in the badge",
 		"  Ctrl+F                fork: branch that route into a new session",
+		"  Ctrl+N                new conversation: choose agent/account and directory",
+		"  Ctrl+E / right-click  show conversation actions",
 		"  Ctrl+O                push the session to another machine (Claude Code, Codex)",
 		"  Ctrl+R                browse another machine's sessions; Enter pulls one here",
 		"  Ctrl+T / Shift+Tab    cycle the target forwards / backwards",
@@ -147,4 +153,28 @@ func PrintSessions(out io.Writer, sessions []Session) {
 		}
 		fmt.Fprint(out, "\n")
 	}
+}
+
+func ParseNewArgs(argv []string) (directory string, options Options, err error) {
+	var flags []string
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
+		switch {
+		case arg == "--dir" || targetFlags[arg]:
+			if i+1 >= len(argv) || strings.TrimSpace(argv[i+1]) == "" || strings.HasPrefix(argv[i+1], "--") {
+				return "", Options{}, fmt.Errorf("%s needs a value", arg)
+			}
+			i++
+			if arg == "--dir" {
+				directory = expandHome(argv[i])
+			} else {
+				flags = append(flags, arg, argv[i])
+			}
+		case arg == "--dangerous" || arg == "--skip-permissions" || arg == "--yolo" || arg == "--safe" || arg == "--no-skip-permissions" || arg == "--help" || arg == "-h":
+			flags = append(flags, arg)
+		default:
+			return "", Options{}, fmt.Errorf("Unknown argument %q; usage: agb new [--target NAME] [--dir DIR] [--dangerous|--safe]", arg)
+		}
+	}
+	return directory, ParseArgs(flags), nil
 }

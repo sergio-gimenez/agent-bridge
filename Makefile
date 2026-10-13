@@ -21,7 +21,7 @@ demo:
 demo-fixture:
 	go run ./demo/fixture
 
-# DEMO=push or DEMO=pull records those instead of the picker tour.
+# DEMO=push, DEMO=pull or DEMO=actions records those instead of the picker tour.
 demo-record:
 	bash ./demo/record.sh $(DEMO)
 

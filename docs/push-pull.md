@@ -42,6 +42,11 @@ sequenceDiagram
 
 ## In the picker
 
+Click a conversation to select it and click a visible footer action to use
+its shortcut. This includes `^o push`, `^r desk`, and the push panel's
+`enter push`, host and directory controls. Double-clicking a remote
+conversation pulls and resumes it here, just like `Enter`.
+
 ### Push: Ctrl+O
 
 ![Pushing a session to desk from the picker](push.gif)

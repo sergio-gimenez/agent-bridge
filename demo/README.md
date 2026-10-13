@@ -32,6 +32,26 @@ make demo-record DEMO=pull && make demo-gif DEMO=pull   # docs/pull.gif
 The pull demo starts a stand-in process "resuming" desk's newest session, so
 the recording shows a session that is still open there and cannot be pulled.
 
+## Right-click actions and new conversations
+
+![Right-click menu and a blank Codex conversation](../docs/actions.gif)
+
+This recording filters to a Claude conversation and opens its action menu
+with a right-click. It scrolls the menu, chooses a new conversation in that
+project, switches the account to CX1 using the clickable footer, toggles YOLO
+on and off, and edits the directory before clicking Start. The last frame
+shows a blank Codex launch, without a resume ID or transcript seed.
+
+```bash
+make demo-record DEMO=actions
+make demo-gif DEMO=actions
+```
+
+[`keys-actions.sh`](keys-actions.sh) sends SGR mouse reports and keyboard
+input to the real picker. The generated recording is
+[`docs/actions.cast`](../docs/actions.cast); the GIF uses the same rendering
+settings as the picker, push and pull demos.
+
 ## What the fixture is
 
 `make demo-fixture` turns [`data.json`](data.json) into a complete fake home

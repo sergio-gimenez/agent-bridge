@@ -220,11 +220,16 @@ func (p *picker) frame(cols, rows int) string {
 	}
 
 	p.scrollTo(bodyRows)
+	p.mouseListWidth, p.mouseBodyRows, p.mouseFooterRow = listWidth, bodyRows, bodyRows+4
+	p.mouseHints = nil
 	target := p.currentTarget()
 	selected := p.selected()
 	terms := splitTerms(p.query)
 
 	list := p.renderList(listWidth, bodyRows, terms, BadgeTarget(target, p.pinned >= 0))
+	if p.panel != nil && cardWidth == 0 {
+		list = p.renderPanel(listWidth, bodyRows)
+	}
 	var card []string
 	switch {
 	case cardWidth == 0:
@@ -245,6 +250,12 @@ func (p *picker) frame(cols, rows int) string {
 		lines = append(lines, row)
 	}
 	lines = append(lines, "", p.renderFooter(width, target, selected, cardWidth > 0))
+	if p.newConversation != nil {
+		p.drawNew(lines, width, bodyRows)
+	}
+	if p.menu != nil {
+		p.drawMenu(lines, width, bodyRows)
+	}
 
 	// Home, then overwrite each line and clear its tail, then clear below: no
 	// full-screen wipe, so nothing flickers between keystrokes.
@@ -482,8 +493,12 @@ type hint struct{ key, label string }
 
 func (p *picker) renderFooter(width int, target *Account, selected *Session, resizable bool) string {
 	switch {
+	case p.menu != nil:
+		return p.clickableHints([]hint{{"enter", "choose"}, {"esc", "close menu"}}, width)
+	case p.newConversation != nil:
+		return p.clickableHints([]hint{{"enter", "start"}, {"^t", "agent/account"}, {"^y", "yolo"}, {"esc", "back"}}, width)
 	case p.panel != nil:
-		return fitHints(p.panelHints(), width)
+		return p.clickableHints(p.panelHints(), width)
 	case p.view != nil:
 		next := p.options.Self
 		if next == "" {
@@ -496,7 +511,10 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		if selected != nil && selected.OpenPID > 0 {
 			enter = hint{"●", "open on " + p.view.host()}
 		}
-		return fitHints([]hint{enter, {"^r", next}, {"esc", "home"}}, width)
+		return p.clickableHints([]hint{enter, {"^r", next}, {"^n", "new"}, {"^e", "actions"}, {"esc", "home"}}, width)
+	}
+	if selected == nil {
+		return p.clickableHints([]hint{{"^n", "new"}, {"^r", "browse remote"}, {"esc", "quit"}}, width)
 	}
 	enter := "open"
 	if target != nil {
@@ -508,7 +526,7 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		}
 	}
 
-	hints := []hint{{"enter", enter}, {"^f", "fork"}}
+	hints := []hint{{"enter", enter}, {"^n", "new"}, {"^e", "actions"}, {"^f", "fork"}}
 	if selected != nil {
 		if next := NextToolTarget(p.targets, selected.Source, target); next != nil {
 			hints = append(hints, hint{"tab", "→ " + AccountLabel(next.Tool, next)})
@@ -529,7 +547,7 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		hints = append(hints, hint{"^←→", "resize"})
 	}
 
-	return fitHints(hints, width)
+	return p.clickableHints(hints, width)
 }
 
 func (p *picker) panelHints() []hint {

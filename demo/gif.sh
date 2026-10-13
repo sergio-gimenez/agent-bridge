@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Renders docs/<name>.cast (demo, push or pull; default demo) into the
+# Renders docs/<name>.cast (demo, push, pull or actions; default demo) into the
 # docs/<name>.gif that the docs embed.
 #
 # Uses agg (https://github.com/asciinema/agg). Prefers a local binary and falls
