@@ -237,6 +237,18 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
+// bareWord is a word the shell takes as it is.
+var bareWord = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
+
+// shellWord is shellQuote for a command a person reads and pastes: quoted only
+// when the shell would otherwise change it.
+func shellWord(value string) string {
+	if bareWord.MatchString(value) {
+		return value
+	}
+	return shellQuote(value)
+}
+
 // referencedFiles finds files the transcript names by absolute path that a
 // resumed session would want to read again: agb handoffs (handoffRoot) and other
 // Claude transcripts with their sibling directories (transcriptRoots). Anything
@@ -331,6 +343,7 @@ type moveFacts struct {
 	Session     Session
 	Home        string // the account home: CLAUDE_CONFIG_DIR or CODEX_HOME
 	RemoteDir   string // the session directory there
+	LocalDir    bool   // the session directory exists here, so it can be copied over
 	RemoteFile  string // where the transcript goes there
 	Transcript  []byte
 	WrittenAgo  time.Duration
@@ -369,10 +382,14 @@ func decideMove(f moveFacts, opts MoveOptions) moveDecision {
 	if home := homeDir(); r["home"] != home {
 		block("HOME on %s is %q, here %q: agb push needs the same home path on both machines", host, r["home"], home)
 	}
-	if r["dir"] != "yes" {
-		block("%s does not exist on %s (clone or create it first)", ShortenHome(f.RemoteDir), host)
-	} else {
+	switch {
+	case r["dir"] == "yes":
 		pass("%s exists on %s", ShortenHome(f.RemoteDir), host)
+	case f.LocalDir:
+		block("%s does not exist on %s; clone or create it first, or copy it over: rsync -a --mkpath %s %s",
+			ShortenHome(f.RemoteDir), host, shellWord(f.Session.Directory+"/"), host+":"+shellWord(f.RemoteDir+"/"))
+	default:
+		block("%s does not exist on %s (clone or create it first)", ShortenHome(f.RemoteDir), host)
 	}
 	switch {
 	case r["tool"] != "yes":
@@ -670,7 +687,7 @@ func planPush(session Session, config Config, opts MoveOptions, link remote) (pu
 	}
 	remoteFile := relocatedTranscript(session, remoteDir)
 	facts := moveFacts{Session: session, Home: home, Transcript: transcript, WrittenAgo: time.Since(info.ModTime()),
-		RemoteDir: remoteDir, RemoteFile: remoteFile}
+		RemoteDir: remoteDir, RemoteFile: remoteFile, LocalDir: isDir(session.Directory)}
 	facts.OpenPID, facts.CanSeeProcs = openSession(home, session)
 	if inside, err := gitOutput(session.Directory, "rev-parse", "--is-inside-work-tree"); err == nil && inside == "true" {
 		facts.GitRepo = true

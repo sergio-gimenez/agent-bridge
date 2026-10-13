@@ -112,6 +112,8 @@ kv home "$HOME"
 `)
 	fmt.Fprintf(&s, "kv size \"$(stat -c %%s %s)\"\n", shellQuote(session.FilePath))
 	fmt.Fprintf(&s, "cwd=$(grep -m1 -o '\"cwd\":\"[^\"]*\"' %s | cut -d'\"' -f4); kv cwd \"$cwd\"\n", shellQuote(session.FilePath))
+	s.WriteString(`if [ -n "$cwd" ]; then kv dir "$(yes_if test -d "$cwd")"; fi
+`)
 	if session.Source == SourceClaude {
 		fmt.Fprintf(&s, "kv sibling \"$(yes_if test -d %s)\"\n", shellQuote(strings.TrimSuffix(session.FilePath, jsonlExt)))
 		fmt.Fprintf(&s, "kv memory \"$(yes_if test -d %s)\"\n", shellQuote(filepath.Join(filepath.Dir(session.FilePath), "memory")))
@@ -196,6 +198,9 @@ func pull(config Config, opts PullOptions, link remote, out io.Writer) (Session,
 	}
 	if localDir == "" {
 		block("the transcript there names no directory; pass --dir")
+	} else if !isDir(localDir) && r["dir"] == "yes" {
+		block("%s does not exist here; clone or create it first, pass --dir, or copy it over: rsync -a --mkpath %s %s",
+			ShortenHome(localDir), opts.Host+":"+shellWord(session.Directory+"/"), shellWord(localDir+"/"))
 	} else if !isDir(localDir) {
 		block("%s does not exist here (clone or create it first, or pass --dir)", ShortenHome(localDir))
 	}

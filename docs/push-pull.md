@@ -194,6 +194,8 @@ holds together:
 | You see | Why | Do |
 | --- | --- | --- |
 | `agb is not installed on desk` while browsing | `agb --print --json` failed over ssh | Copy `~/.local/bin/agb` to desk, and check that `ssh desk 'command -v agb'` finds it |
+| `~/phd does not exist on desk` | The project was never cloned or copied there | `git clone` it there, or run the `rsync -a --mkpath …` line agb prints, which copies the whole directory, untracked files included |
+| `~/phd does not exist here` on a pull | The project was never cloned or copied here | The same, the other way: `git clone` it, `--dir` to another checkout, or the printed `rsync -a --mkpath desk:… …` line |
 | `HOME on desk is …` | The two machines have different home paths | Use the same user and home path on both |
 | `the copy is bigger on desk` | The session carried on there | Pull it instead, or `--force` to throw those turns away |
 | Pushed, but nothing appears in herdr | No arrive hook, or it failed | `agb push desk ID --dry-run` prints the expanded hook; run it on desk to see the error |

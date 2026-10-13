@@ -83,7 +83,9 @@ func TestPullSessionStops(t *testing.T) {
 		{"unknown id", "ffff", nil, PullOptions{}, "no session"},
 		{"unsafe id", "0c5d'; rm -rf ~", nil, PullOptions{}, "not a session id"},
 		{"open there", "0c5d", map[string]string{"open_there": "77"}, PullOptions{Force: true}, "open on desk (pid 77)"},
-		{"no directory here", "0c5d", nil, PullOptions{LocalDir: filepath.Join(workdir, "gone")}, "does not exist here"},
+		{"no directory here", "0c5d", map[string]string{"dir": "no"}, PullOptions{LocalDir: filepath.Join(workdir, "gone")}, "does not exist here (clone or create it first, or pass --dir)"},
+		// The project is there, so the stop says how to copy it over.
+		{"no directory here, but there", "0c5d", nil, PullOptions{LocalDir: filepath.Join(workdir, "gone")}, "or copy it over: rsync -a --mkpath desk:" + shellWord(workdir+"/") + " " + shellWord(filepath.Join(workdir, "gone")+"/")},
 		{"no tool here", "0c5d", nil, PullOptions{}, "Claude Code is not installed here"},
 		{"bigger here", "0c5d", map[string]string{"size": "3"}, PullOptions{}, "bigger here"},
 	}

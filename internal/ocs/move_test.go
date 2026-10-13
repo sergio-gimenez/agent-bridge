@@ -104,7 +104,12 @@ func TestDecideMove(t *testing.T) {
 		}
 	}
 	check("other home", func(f *moveFacts) { f.Remote["home"] = "/home/other" }, MoveOptions{}, "same home path", "")
-	check("no directory", func(f *moveFacts) { f.Remote["dir"] = "no" }, MoveOptions{}, "does not exist on desk", "")
+	check("no directory", func(f *moveFacts) { f.Remote["dir"] = "no" }, MoveOptions{}, "/work/p does not exist on desk (clone or create it first)", "")
+	// The project is here, so the stop says how to copy it over.
+	check("no directory there, but here", func(f *moveFacts) { f.Remote["dir"], f.LocalDir = "no", true }, MoveOptions{},
+		"or copy it over: rsync -a --mkpath /work/p/ desk:/work/p/", "")
+	check("no other directory there", func(f *moveFacts) { f.Remote["dir"], f.LocalDir, f.RemoteDir = "no", true, "/work/my p" }, MoveOptions{},
+		"rsync -a --mkpath /work/p/ desk:'/work/my p/'", "")
 	check("no tool", func(f *moveFacts) { f.Remote["tool"] = "no" }, MoveOptions{}, "not installed", "")
 	check("logged out", func(f *moveFacts) { f.Remote["login"] = "no" }, MoveOptions{}, "", "logged in")
 	// A bigger copy there went on without this one: replacing it loses turns.

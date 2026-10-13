@@ -72,6 +72,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is open on either side, or when the receiving side's copy is bigger, since
   that one went on without this one. Git state is a note, never a stop. See
   [docs/push-pull.md](docs/push-pull.md).
+- When the project directory is missing on the receiving machine, push and
+  pull stop with the `rsync -a --mkpath` command that copies it over.
 - `arrive` in the config: per host, a shell command run there once a pushed
   session has landed, such as opening it in a herdr tab.
 - `agb --print --json` lists sessions as JSON, with whether each is open; it is
