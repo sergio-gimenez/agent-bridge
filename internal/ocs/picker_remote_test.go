@@ -84,6 +84,7 @@ var (
 	ctrlO = Key{Name: "o", Ctrl: true}
 	ctrlR = Key{Name: "r", Ctrl: true}
 	ctrlK = Key{Name: "k", Ctrl: true}
+	ctrlP = Key{Name: "p", Ctrl: true}
 	enter = Key{Name: "enter"}
 	esc   = Key{Name: "escape"}
 	right = Key{Name: "right"}
@@ -171,6 +172,46 @@ func TestPushPanelStopsTheLocalSession(t *testing.T) {
 	press(t, p, ctrlK)
 	if stopped != running.Process.Pid || len(link.copies) == 0 || !strings.Contains(screen(p), "Pushed to desk") {
 		t.Fatalf("stopped %d, copies %v\n%s", stopped, link.copies, screen(p))
+	}
+}
+
+// The project is not there: ^p copies it over, checks again and pushes.
+func TestPushPanelCopiesTheProject(t *testing.T) {
+	linuxOnly(t)
+	p, link, _, session := remoteFixture(t)
+	link.patch["dir"] = "no"
+	link.copied = func() { delete(link.patch, "dir") }
+	press(t, p, ctrlO)
+	if got := screen(p); !strings.Contains(got, "✗ ~/phd does not exist on desk") || !strings.Contains(got, "^p copy project there & push") || strings.Contains(got, "enter push") {
+		t.Fatalf("project missing there:\n%s", got)
+	}
+	press(t, p, ctrlP)
+	if len(link.copies) < 2 || strings.Join(link.copies[0], " ") != "--info=progress2 "+session.Directory+"/ -> "+session.Directory+"/" ||
+		!strings.Contains(screen(p), "Pushed to desk") {
+		t.Fatalf("copies %v\n%s", link.copies, screen(p))
+	}
+}
+
+// The project is not here: the pull stops, and ^p copies it over and pulls.
+func TestBrowseAndPullCopiesTheProject(t *testing.T) {
+	linuxOnly(t)
+	p, link, _, session := remoteFixture(t)
+	var listing bytes.Buffer
+	if err := WriteListing(&listing, []Session{session}, func(Session) int { return 0 }); err != nil {
+		t.Fatal(err)
+	}
+	cannedListing = listing.String()
+	// The transcript there names a directory this machine does not have.
+	elsewhere := filepath.Join(filepath.Dir(session.Directory), "elsewhere")
+	link.patch["cwd"], link.patch["dir"] = elsewhere, "yes"
+
+	press(t, p, ctrlR, enter)
+	if got := screen(p); p.done != nil || !strings.Contains(got, "~/elsewhere does not exist here") || !strings.Contains(got, "^p copy project here & pull") {
+		t.Fatalf("project missing here:\n%s", got)
+	}
+	if result := press(t, p, ctrlP); result == nil || result.PulledFrom != "desk" ||
+		len(link.fetches) == 0 || strings.Join(link.fetches[0], " ") != "--info=progress2 "+elsewhere+"/ -> "+elsewhere+"/" {
+		t.Fatalf("result %+v, fetches %v", result, link.fetches)
 	}
 }
 

@@ -106,8 +106,10 @@ func TestDecideMove(t *testing.T) {
 	check("other home", func(f *moveFacts) { f.Remote["home"] = "/home/other" }, MoveOptions{}, "same home path", "")
 	check("no directory", func(f *moveFacts) { f.Remote["dir"] = "no" }, MoveOptions{}, "/work/p does not exist on desk (clone or create it first)", "")
 	// The project is here, so the stop says how to copy it over.
-	check("no directory there, but here", func(f *moveFacts) { f.Remote["dir"], f.LocalDir = "no", true }, MoveOptions{},
-		"or copy it over: rsync -a --mkpath /work/p/ desk:/work/p/", "")
+	if d := check("no directory there, but here", func(f *moveFacts) { f.Remote["dir"], f.LocalDir = "no", true }, MoveOptions{},
+		"or copy it over: rsync -a --mkpath /work/p/ desk:/work/p/", ""); !d.CopyDir {
+		t.Error("a project here but not there is not offered for copying")
+	}
 	check("no other directory there", func(f *moveFacts) { f.Remote["dir"], f.LocalDir, f.RemoteDir = "no", true, "/work/my p" }, MoveOptions{},
 		"rsync -a --mkpath /work/p/ desk:'/work/my p/'", "")
 	check("no tool", func(f *moveFacts) { f.Remote["tool"] = "no" }, MoveOptions{}, "not installed", "")
@@ -143,6 +145,8 @@ type loopback struct {
 	copies  [][]string
 	fetches [][]string
 	runs    []string
+	// Runs after each CopyTo or Fetch, to stand for what the copy changed.
+	copied func()
 }
 
 func (l *loopback) Probe(script string) (string, error) {
@@ -161,11 +165,17 @@ func (l *loopback) Copy(paths []string, flags ...string) error {
 
 func (l *loopback) CopyTo(src, dst string, flags ...string) error {
 	l.copies = append(l.copies, append(append([]string{}, flags...), src+" -> "+dst))
+	if l.copied != nil {
+		l.copied()
+	}
 	return nil
 }
 
 func (l *loopback) Fetch(src, dst string, flags ...string) error {
 	l.fetches = append(l.fetches, append(append([]string{}, flags...), src+" -> "+dst))
+	if l.copied != nil {
+		l.copied()
+	}
 	return nil
 }
 
@@ -259,6 +269,32 @@ func TestMoveSession(t *testing.T) {
 	if len(there.runs) != 1 || !strings.HasPrefix(there.runs[0], "land 's1' 'cd ") || !strings.HasSuffix(there.runs[0], "claude --resume s1'") {
 		t.Fatalf("hook runs %v", there.runs)
 	}
+	// The project is not there: asked, agb copies it over, checks again and
+	// pushes; told no, or with nobody to ask, it stops.
+	for _, answer := range []bool{true, false} {
+		there = &loopback{patch: map[string]string{"tool": "yes", "login": "yes", "dir": "no"}}
+		there.copied = func() { delete(there.patch, "dir") }
+		asked := ""
+		confirm := func(question string) bool { asked = question; return answer }
+		out.Reset()
+		code, _ := moveSession(session, config, MoveOptions{Host: "desk", Confirm: confirm}, there, &out)
+		copiedDir := len(there.copies) > 0 && strings.Join(there.copies[0], " ") == "--info=progress2 "+workdir+"/ -> "+workdir+"/"
+		if asked != "Copy ~/work to desk now with that rsync? [y/N] " || copiedDir != answer || (code == 0) != answer {
+			t.Fatalf("answer %v: asked %q, code %d, copies %v\n%s", answer, asked, code, there.copies, out.String())
+		}
+	}
+	there = &loopback{patch: map[string]string{"tool": "yes", "login": "yes", "dir": "no"}}
+	if code, _ := moveSession(session, config, MoveOptions{Host: "desk"}, there, &out); code != 2 || len(there.copies) != 0 {
+		t.Fatalf("nobody to ask: code %d, copies %v", code, there.copies)
+	}
+	// Only when the project is all that stops it: copying it would not let
+	// the push go ahead otherwise.
+	there = &loopback{patch: map[string]string{"tool": "yes", "login": "yes", "dir": "no", "open_there": "77"}}
+	confirm := func(string) bool { t.Fatal("asked although the session is open there"); return true }
+	if code, _ := moveSession(session, config, MoveOptions{Host: "desk", Confirm: confirm}, there, &out); code != 2 || len(there.copies) != 0 {
+		t.Fatalf("open there too: code %d, copies %v", code, there.copies)
+	}
+
 	// --no-arrive skips it; a dry run never runs it.
 	for _, opts := range []MoveOptions{{Host: "desk", NoArrive: true}, {Host: "desk", DryRun: true}} {
 		there = &loopback{patch: map[string]string{"tool": "yes", "login": "yes"}}

@@ -104,6 +104,24 @@ func TestPullSessionStops(t *testing.T) {
 	}
 }
 
+// The project is there but not here: asked, agb copies it over and pulls.
+func TestPullSessionCopiesTheProject(t *testing.T) {
+	linuxOnly(t)
+	config, _, _, workdir := pullFixture(t)
+	gone := filepath.Join(workdir, "gone")
+	for _, answer := range []bool{true, false} {
+		there := &loopback{}
+		asked := ""
+		confirm := func(question string) bool { asked = question; return answer }
+		var out bytes.Buffer
+		code, err := pullSession(config, PullOptions{Host: "desk", ID: "0c5d", LocalDir: gone, Confirm: confirm}, there, &out)
+		copiedDir := len(there.fetches) > 0 && strings.Join(there.fetches[0], " ") == "--info=progress2 "+workdir+"/ -> "+gone+"/"
+		if !strings.HasPrefix(asked, "Copy ~/phd from desk to ~/phd/gone now") || copiedDir != answer || (code == 0) != answer {
+			t.Fatalf("answer %v: asked %q, code %d %v, fetches %v\n%s", answer, asked, code, err, there.fetches, out.String())
+		}
+	}
+}
+
 // A dirty or unpushed checkout there is a note: the code is git's to carry.
 func TestPullSessionGitNotes(t *testing.T) {
 	linuxOnly(t)

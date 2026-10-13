@@ -496,7 +496,11 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		if selected != nil && selected.OpenPID > 0 {
 			enter = hint{"●", "open on " + p.view.host()}
 		}
-		return fitHints([]hint{enter, {"^r", next}, {"esc", "home"}}, width)
+		hints := []hint{enter}
+		if selected != nil && selected.ID == p.view.copyOffer {
+			hints = append(hints, hint{"^p", "copy project here & pull"})
+		}
+		return fitHints(append(hints, hint{"^r", next}, hint{"esc", "home"}), width)
 	}
 	enter := "open"
 	if target != nil {
@@ -548,6 +552,9 @@ func (p *picker) panelHints() []hint {
 	}
 	if panel.plan.LocalPID > 0 {
 		hints = append(hints, hint{"^k", "stop it here & push"})
+	}
+	if panel.plan.offersDirCopy() {
+		hints = append(hints, hint{"^p", "copy project there & push"})
 	}
 	if len(panel.hosts) > 1 {
 		hints = append(hints, hint{"←→", "host"})

@@ -208,6 +208,21 @@ func (d moveDialog) yes(prompt string, def bool) (bool, error) {
 	return strings.HasPrefix(strings.ToLower(answer), "y"), nil
 }
 
+// confirm asks a yes/no question that defaults to no.
+func (d moveDialog) confirm(question string) bool {
+	ok, err := d.yes(question, false)
+	return err == nil && ok
+}
+
+// terminalConfirm asks yes/no questions on the terminal; nil when stdin is not
+// one, so a script is never left waiting for an answer.
+func terminalConfirm(in *os.File, out io.Writer) func(string) bool {
+	if info, err := in.Stat(); err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return nil
+	}
+	return moveDialog{in: bufio.NewReader(in), out: out}.confirm
+}
+
 // RunMoveDialog asks where to, shows the checks and the copy list, and pushes
 // the session after a confirmation.
 func RunMoveDialog(session Session, config Config, in io.Reader, out io.Writer) (int, error) {
@@ -245,7 +260,12 @@ func runMoveDialog(session Session, config Config, sshConfig string, in io.Reade
 		return 1, err
 	}
 
+	// The checks run as a dry run first, but a project missing there can be
+	// copied over right away, unless this is a dry run all the way.
 	opts := MoveOptions{Host: host, RemoteDir: dir, DryRun: true}
+	if !dryRunEnabled() {
+		opts.Confirm = d.confirm
+	}
 	fmt.Fprintln(out)
 	if code, err := moveSession(session, config, opts, link, out); code != 0 || err != nil {
 		return code, err
@@ -253,6 +273,6 @@ func runMoveDialog(session Session, config Config, sshConfig string, in io.Reade
 	if ok, err := d.yes("\nPush it now? [Y/n] ", true); err != nil || !ok {
 		return 1, ErrCancelled
 	}
-	opts.DryRun = dryRunEnabled()
+	opts.DryRun, opts.Confirm = dryRunEnabled(), nil
 	return moveSession(session, config, opts, link, out)
 }

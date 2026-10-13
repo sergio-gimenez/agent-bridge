@@ -56,6 +56,7 @@ will send and what happens once the session is there. Then:
 | `←` `→` | Another machine from `moveHosts` |
 | `Ctrl+D` | Another directory there, when the project exists in more than one place |
 | `Ctrl+K` | The session is open here: end it (SIGTERM), check again, and push |
+| `Ctrl+P` | The project is not on that machine: copy it over with rsync, check again, and push |
 | `Esc` | Back to the list |
 
 A line marked `✓` passed, `!` is a note that does not stop the push, and `✗`
@@ -70,6 +71,8 @@ stops it.
 back home. Typing still filters the list. `Enter` pulls the selected session
 and resumes it here, in the account it belongs to. A session that is still open
 over there shows `● open on desk` and cannot be pulled until you quit it there.
+When a pull stops because the project is not on this machine, `Ctrl+P` copies
+it over with rsync and pulls.
 `Esc` goes home.
 
 Browsing runs `agb --print --json` on the other machine over ssh, so `agb` has
@@ -141,7 +144,8 @@ $ agb pull desk 0c5ddcb6
 | The session is open on the receiving side | ✗ stop | ✗ stop |
 | The session is open on the sending side | ✗ stop (`--force`, or `Ctrl+K` in the picker) | ✗ stop (`--force`) |
 | The receiving side's copy is **bigger** | ✗ stop (`--force`) | ✗ stop (`--force`) |
-| Project directory, tool or same home path missing on the receiving side | ✗ stop | ✗ stop |
+| Project directory missing on the receiving side | ✗ stop, with an offer to copy it over | ✗ stop, with an offer to copy it over |
+| Tool or same home path missing on the receiving side | ✗ stop | ✗ stop |
 | Account there does not look logged in | ! note | — |
 | Uncommitted or unpushed work, or the two checkouts at different commits | ! note | ! note |
 
@@ -194,8 +198,8 @@ holds together:
 | You see | Why | Do |
 | --- | --- | --- |
 | `agb is not installed on desk` while browsing | `agb --print --json` failed over ssh | Copy `~/.local/bin/agb` to desk, and check that `ssh desk 'command -v agb'` finds it |
-| `~/phd does not exist on desk` | The project was never cloned or copied there | `git clone` it there, or run the `rsync -a --mkpath …` line agb prints, which copies the whole directory, untracked files included |
-| `~/phd does not exist here` on a pull | The project was never cloned or copied here | The same, the other way: `git clone` it, `--dir` to another checkout, or the printed `rsync -a --mkpath desk:… …` line |
+| `~/phd does not exist on desk` | The project was never cloned or copied there | `git clone` it there. Or let agb copy it: it asks right after the checks, or `Ctrl+P` in the picker. The copy is the printed `rsync -a --mkpath …` line, so it carries the whole directory, untracked files included |
+| `~/phd does not exist here` on a pull | The project was never cloned or copied here | The same, the other way: `git clone` it, `--dir` to another checkout, or answer yes (`Ctrl+P` in the picker) to copy it from desk |
 | `HOME on desk is …` | The two machines have different home paths | Use the same user and home path on both |
 | `the copy is bigger on desk` | The session carried on there | Pull it instead, or `--force` to throw those turns away |
 | Pushed, but nothing appears in herdr | No arrive hook, or it failed | `agb push desk ID --dry-run` prints the expanded hook; run it on desk to see the error |

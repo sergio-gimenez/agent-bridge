@@ -50,7 +50,10 @@ type remoteView struct {
 	err     string
 	// Why the last pull did not happen.
 	notice []string
-	gen    int
+	// The session whose pull stopped only because its project is not here,
+	// which ^p copies over.
+	copyOffer string
+	gen       int
 }
 
 func (v *remoteView) host() string { return v.hosts[v.index] }
@@ -170,20 +173,34 @@ func (p *picker) push() {
 // stopAndPush ends the session here, checks again, and pushes if nothing else
 // stops it.
 func (p *picker) stopAndPush() {
-	panel := p.panel
-	pid, host, dir, session, config := panel.plan.LocalPID, panel.plan.Host, panel.plan.RemoteDir, panel.session, p.options.Config
-	panel.gen++
-	gen := panel.gen
-	panel.state, panel.status = panelPushing, []string{fmt.Sprintf("stopping it here (pid %d)…", pid)}
+	pid := p.panel.plan.LocalPID
 	stop := p.stop
 	if stop == nil {
 		stop = func(pid int) error { return stopProcess(pid, 10*time.Second) }
 	}
+	p.fixAndPush(fmt.Sprintf("stopping it here (pid %d)…", pid), func(remote) error { return stop(pid) })
+}
+
+// copyDirAndPush copies the project over to where it is missing, checks again,
+// and pushes if nothing else stops it.
+func (p *picker) copyDirAndPush() {
+	plan := *p.panel.plan
+	p.fixAndPush(fmt.Sprintf("copying %s to %s…", ShortenHome(plan.Session.Directory), plan.Host), plan.copyDir)
+}
+
+// fixAndPush clears what stops the push, checks again, and pushes if nothing
+// else stops it.
+func (p *picker) fixAndPush(doing string, fix func(remote) error) {
+	panel := p.panel
+	host, dir, session, config := panel.plan.Host, panel.plan.RemoteDir, panel.session, p.options.Config
+	panel.gen++
+	gen := panel.gen
+	panel.state, panel.status = panelPushing, []string{doing}
 	p.background(func() func() {
-		if err := stop(pid); err != nil {
+		link := p.dial(host)
+		if err := fix(link); err != nil {
 			return func() { p.pushed(panel, gen, nil, err) }
 		}
-		link := p.dial(host)
 		plan, err := planPush(session, config, MoveOptions{Host: host, RemoteDir: dir}, link)
 		if err != nil || len(plan.Decision.Blockers) > 0 {
 			return func() {
@@ -244,6 +261,8 @@ func (p *picker) handlePanel(key Key) (*PickResult, error) {
 		p.checkPanel(false)
 	case key.Ctrl && key.Name == "k" && panel.state == panelReady && panel.plan.LocalPID > 0:
 		p.stopAndPush()
+	case key.Ctrl && key.Name == "p" && panel.state == panelReady && panel.plan.offersDirCopy():
+		p.copyDirAndPush()
 	}
 	return nil, nil
 }
@@ -279,7 +298,7 @@ func (p *picker) loadRemote() {
 	view := p.view
 	view.gen++
 	gen := view.gen
-	view.loading, view.err, view.notice = true, "", nil
+	view.loading, view.err, view.notice, view.copyOffer = true, "", nil, ""
 	p.sessions, p.active, p.offset = nil, 0, 0
 	p.refilter()
 	host, config := view.host(), p.options.Config
@@ -308,8 +327,9 @@ func (p *picker) loadRemote() {
 }
 
 // pullSelected pulls the selected session from the host being browsed and,
-// once it is here, finishes the picker to resume it.
-func (p *picker) pullSelected() {
+// once it is here, finishes the picker to resume it. With copyDir it first
+// copies the project over if that is all that stops it.
+func (p *picker) pullSelected(copyDir bool) {
 	view, selected := p.view, p.selected()
 	if selected == nil || view.loading || view.pulling {
 		return
@@ -318,15 +338,20 @@ func (p *picker) pullSelected() {
 	if selected.OpenPID > 0 {
 		return // the card says why
 	}
-	view.pulling, view.notice = true, nil
+	view.pulling, view.notice, view.copyOffer = true, nil, ""
 	session, config := *selected, p.options.Config
 	p.background(func() func() {
 		var out bytes.Buffer
-		here, code, err := pull(config, PullOptions{Host: host, ID: session.ID}, p.dial(host), &out)
+		offered := false
+		confirm := func(string) bool { offered = true; return copyDir }
+		here, code, err := pull(config, PullOptions{Host: host, ID: session.ID, Confirm: confirm}, p.dial(host), &out)
 		return func() {
 			view.pulling = false
 			if code != 0 || err != nil {
 				view.notice = stopLines(out.String(), err)
+				if offered && !copyDir {
+					view.copyOffer = session.ID
+				}
 				return
 			}
 			here.Title, here.Prompts, here.AssistantSnippet = session.Title, session.Prompts, session.AssistantSnippet
@@ -360,7 +385,12 @@ func (p *picker) handleBrowsing(key Key) (result *PickResult, handled bool) {
 	case key.Name == "escape":
 		p.goHome()
 	case key.Name == "enter":
-		p.pullSelected()
+		p.pullSelected(false)
+		return p.done, true
+	case key.Ctrl && key.Name == "p":
+		if selected := p.selected(); selected != nil && selected.ID == p.view.copyOffer {
+			p.pullSelected(true)
+		}
 		return p.done, true
 	// Routes, forks, yolo and pushing are about sessions here.
 	case key.Ctrl && (key.Name == "f" || key.Name == "o" || key.Name == "t" || key.Name == "y"),
