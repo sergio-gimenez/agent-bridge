@@ -35,6 +35,9 @@ func resolveTarget(config ocs.Config, requested string) (*ocs.Account, error) {
 func run() (int, error) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "help":
+			ocs.PrintGuide(os.Stdout)
+			return 0, nil
 		case "limits":
 			return ocs.RunUsageCommand(os.Args[2:], os.Stdout)
 		case "setup", "plan", "sync":
@@ -179,6 +182,10 @@ func runNew(argv []string) (int, error) {
 // runOpen is Enter in the picker without the picker, so another program (a
 // launcher button, a script) can resume a session it found with --print.
 func runOpen(argv []string) (int, error) {
+	if ocs.ParseArgs(argv).Help {
+		ocs.PrintHelp(os.Stdout)
+		return 0, nil
+	}
 	id, fork, args, err := ocs.ParseOpenArgs(argv)
 	if err != nil {
 		return 2, err

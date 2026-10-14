@@ -206,6 +206,9 @@ func (p *picker) scrollTo(height int) {
 }
 
 func (p *picker) frame(cols, rows int) string {
+	if p.helpOpen {
+		return p.helpFrame(cols, rows)
+	}
 	// Keep every row <= cols-1 cells, so no terminal ever wraps one back to
 	// column 0 and smears the layout.
 	width := max(20, cols-1)
@@ -536,11 +539,11 @@ type hint struct{ key, label string }
 func (p *picker) renderFooter(width int, target *Account, selected *Session, resizable bool) string {
 	switch {
 	case p.menu != nil:
-		return p.clickableHints([]hint{{"enter", "choose"}, {"esc", "close menu"}}, width)
+		return p.clickableHints([]hint{{"f1", "help"}, {"enter", "choose"}, {"esc", "close menu"}}, width)
 	case p.newConversation != nil:
-		return p.clickableHints([]hint{{"enter", "start"}, {"^t", "agent/account"}, {"^y", "yolo"}, {"esc", "back"}}, width)
+		return p.clickableHints([]hint{{"f1", "help"}, {"enter", "start"}, {"^t", "agent/account"}, {"^y", "yolo"}, {"esc", "back"}}, width)
 	case p.panel != nil:
-		return p.clickableHints(p.panelHints(), width)
+		return p.clickableHints(append([]hint{{"f1", "help"}}, p.panelHints()...), width)
 	case p.view != nil:
 		next := p.options.Self
 		if next == "" {
@@ -553,17 +556,17 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		if selected != nil && selected.OpenPID > 0 {
 			enter = hint{"●", "open on " + p.view.host()}
 		}
-		hints := []hint{enter}
+		hints := []hint{{"f1", "help"}, enter}
 		switch {
 		case p.view.asking(selected):
-			hints = []hint{{"enter", "copy & pull"}, {"n", "not now"}}
+			hints = append(hints[:1], hint{"enter", "copy & pull"}, hint{"n", "not now"})
 		case selected != nil && selected.ID == p.view.copyOffer:
 			hints = append(hints, hint{"^p", "copy project here & pull"})
 		}
 		return p.clickableHints(append(hints, hint{"^r", next}, hint{"^n", "new"}, hint{"^e", "actions"}, hint{"esc", "home"}), width)
 	}
 	if selected == nil {
-		return p.clickableHints([]hint{{"^n", "new"}, {"^r", "browse remote"}, {"esc", "quit"}}, width)
+		return p.clickableHints([]hint{{"f1", "help"}, {"^n", "new"}, {"^r", "browse remote"}, {"esc", "quit"}}, width)
 	}
 	enter := "open"
 	if target != nil {
@@ -575,7 +578,7 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		}
 	}
 
-	hints := []hint{{"enter", enter}, {"^n", "new"}, {"^e", "actions"}, {"^f", "fork"}}
+	hints := []hint{{"f1", "help"}, {"enter", enter}, {"^n", "new"}, {"^e", "actions"}, {"^f", "fork"}}
 	if selected != nil {
 		if next := NextToolTarget(p.targets, selected.Source, target); next != nil {
 			hints = append(hints, hint{"tab", "→ " + AccountLabel(next.Tool, next)})

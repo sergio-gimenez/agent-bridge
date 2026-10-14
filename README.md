@@ -455,6 +455,12 @@ The setting follows the *target*, not the session: forking a `cc1` session into
 
 ## Command line
 
+Press `F1` in the picker or any of its dialogs to open the built-in guide.
+With an empty search, `?` opens it too. Scroll with arrow keys, `PgUp`/`PgDn`,
+`Home`/`End` or the mouse wheel; `Esc` returns to your previous view.
+The guide covers routing, forks, accounts, permissions, transfers and shared
+setup. Run `agb help` to read the same guide and command reference in your shell.
+
 | Flag | Effect |
 | --- | --- |
 | `--print` | List the 25 most recent sessions and exit, no picker |

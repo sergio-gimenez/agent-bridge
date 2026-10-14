@@ -47,6 +47,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A built-in guide.** `F1` in the picker or any of its dialogs (or `?` with an
+  empty search) opens a scrollable guide to routing, forks, accounts, limits,
+  permissions, transfers and shared setup; `agb help` prints it in the shell.
 - **Several OpenCode stores.** `opencodeAccounts` entries (`name`, `command`,
   `dbPath`, optional `configHome`) add OpenCode wrappers with their own session
   database as extra targets beside `oc`. Resuming stays in the session's store

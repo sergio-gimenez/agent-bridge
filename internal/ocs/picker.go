@@ -131,9 +131,11 @@ func clampIndex(index, length int) int {
 }
 
 type picker struct {
-	sessions []Session
-	targets  []Account
-	options  PickOptions
+	helpOpen                      bool
+	helpOffset, helpMax, helpPage int
+	sessions                      []Session
+	targets                       []Account
+	options                       PickOptions
 
 	query    string
 	active   int
@@ -279,6 +281,13 @@ func (p *picker) refilter() {
 // handle applies one key. It returns a result, ErrCancelled, or neither when
 // the picker should keep going.
 func (p *picker) handle(key Key) (*PickResult, error) {
+	if p.helpOpen {
+		return p.handleHelp(key)
+	}
+	if key.Name == "f1" || (key.Text == "?" && p.query == "" && p.menu == nil && p.newConversation == nil && p.panel == nil) {
+		p.helpOpen, p.helpOffset = true, 0
+		return nil, nil
+	}
 	if key.Mouse != nil {
 		return p.handleMouse(*key.Mouse)
 	}
