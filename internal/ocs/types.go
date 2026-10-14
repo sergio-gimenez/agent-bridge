@@ -22,11 +22,14 @@ const (
 )
 
 // Account is one configured identity of a tool: a Claude account (its
-// CLAUDE_CONFIG_DIR), a Codex account (its CODEX_HOME), or OpenCode, which has
-// only one.
+// CLAUDE_CONFIG_DIR), a Codex account (its CODEX_HOME), or an OpenCode store.
 type Account struct {
 	Tool Source
 	Name string
+	// OpenCode variants can use a wrapper and an isolated session database.
+	Command    string
+	DBPath     string
+	ConfigHome string
 	// The tool's isolated home. Empty means the tool's own default home.
 	Home string
 	// Launch this account with permission checks bypassed by default. Nil
@@ -45,7 +48,7 @@ type Session struct {
 	Prompts          []string
 	AssistantSnippet []string
 	SearchText       string
-	// The account this session belongs to. Nil for OpenCode, which has one.
+	// The account this session belongs to. Nil means the tool's default store.
 	Account *Account
 	// File-backed sources (Claude JSONL, Codex rollout) record where the
 	// transcript lives, so seeding never has to hunt for it again.

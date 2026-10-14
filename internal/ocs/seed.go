@@ -156,8 +156,12 @@ func parseOpencodeTranscript(raw []byte) (sessionTranscript, error) {
 }
 
 func opencodeTranscript(id string) (sessionTranscript, error) {
+	return opencodeAccountTranscript(id, nil)
+}
+
+func opencodeAccountTranscript(id string, account *Account) (sessionTranscript, error) {
 	args := []string{"export", id}
-	if opencodeV2() {
+	if opencodeAccountV2(account) {
 		args = []string{"session", "export", id}
 	}
 	// A file, not a pipe: OpenCode 2 exits before a pipe drains, so a piped
@@ -168,7 +172,7 @@ func opencodeTranscript(id string) (sessionTranscript, error) {
 	}
 	defer os.Remove(out.Name())
 	defer out.Close()
-	command := exec.Command("opencode", args...)
+	command := exec.Command(opencodeCommand(account), args...)
 	command.Stdout = out
 	command.Stderr = os.Stderr
 	if err := command.Run(); err != nil {
@@ -350,7 +354,7 @@ func BuildSessionSeed(session Session) (SessionSeed, error) {
 	case SourceCodex:
 		transcript, err = codexTranscript(session)
 	default:
-		transcript, err = opencodeTranscript(session.ID)
+		transcript, err = opencodeAccountTranscript(session.ID, session.Account)
 	}
 	if err != nil {
 		return SessionSeed{}, err

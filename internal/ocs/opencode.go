@@ -61,7 +61,25 @@ func opencodeTables(db *sql.DB) (legacy, v2 bool, err error) {
 // writes it: no --fork on the TUI, `session export`, --prompt for a new
 // session.
 func opencodeV2() bool {
-	db, err := openOpencodeDB(OpencodeDBPath())
+	return opencodeAccountV2(nil)
+}
+
+func opencodeCommand(account *Account) string {
+	if account != nil && account.Command != "" {
+		return account.Command
+	}
+	return "opencode"
+}
+
+func opencodeAccountDB(account *Account) string {
+	if account != nil && account.DBPath != "" {
+		return account.DBPath
+	}
+	return OpencodeDBPath()
+}
+
+func opencodeAccountV2(account *Account) bool {
+	db, err := openOpencodeDB(opencodeAccountDB(account))
 	if err != nil {
 		return false
 	}
@@ -295,11 +313,14 @@ func (cache *Cache) OpencodeSessions(path string, scope SearchScope) ([]Session,
 	}
 
 	previous := cache.last()
-	reuse := previous.OpencodeDB == path
+	previousStore, reuse := previous.OpencodeStores[path]
+	if !reuse && previous.OpencodeDB == path {
+		previousStore, reuse = previous.Opencode, true
+	}
 	next := make(map[string]cachedOpencode, len(rows))
 	var stale []string
 	for _, row := range rows {
-		cached, ok := previous.Opencode[row.ID]
+		cached, ok := previousStore[row.ID]
 		if reuse && ok && cached.TimeUpdated == row.TimeUpdated {
 			next[row.ID] = cached
 			continue
@@ -330,6 +351,7 @@ func (cache *Cache) OpencodeSessions(path string, scope SearchScope) ([]Session,
 	cache.mu.Lock()
 	cache.next.OpencodeDB = path
 	cache.next.Opencode = next
+	cache.next.OpencodeStores[path] = next
 	if len(stale) > 0 || !reuse {
 		cache.dirty = true
 	}

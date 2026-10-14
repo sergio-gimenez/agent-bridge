@@ -3,6 +3,21 @@
   "title": "AgentBridge configuration with shared agent setup",
   "type": "object",
   "properties": {
+    "opencodeAccounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "command", "dbPath"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "command": { "type": "string", "minLength": 1 },
+          "dbPath": { "type": "string", "minLength": 1 },
+          "configHome": { "type": "string" },
+          "skipPermissions": { "type": "boolean" }
+        }
+      }
+    },
     "setup": {
       "type": "object",
       "additionalProperties": false,

@@ -13,9 +13,9 @@ type Config struct {
 	// (claude: --dangerously-skip-permissions, opencode: --auto,
 	// codex: --dangerously-bypass-approvals-and-sandbox).
 	SkipPermissions bool
-	// OpenCode has no accounts, so its per-tool settings live in their own
-	// block.
+	// Default OpenCode settings and optional isolated wrapper targets.
 	Opencode             Account
+	OpencodeAccounts     []Account
 	ClaudeAccounts       []Account
 	DefaultClaudeAccount string
 	CodexAccounts        []Account
@@ -149,6 +149,25 @@ func ParseConfig(raw []byte) (Config, error) {
 
 	opencode := OpencodeAccount
 	opencode.SkipPermissions = skipPermissionsOf(parsed["opencode"])
+	var opencodeAccounts []Account
+	seenOpencode := map[string]bool{"oc": true}
+	entries, _ := parsed["opencodeAccounts"].([]any)
+	for _, entry := range entries {
+		fields, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := fields["name"].(string)
+		command, _ := fields["command"].(string)
+		dbPath, _ := fields["dbPath"].(string)
+		configHome, _ := fields["configHome"].(string)
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" || seenOpencode[name] || strings.TrimSpace(command) == "" || strings.TrimSpace(dbPath) == "" {
+			continue
+		}
+		seenOpencode[name] = true
+		opencodeAccounts = append(opencodeAccounts, Account{Tool: SourceOpencode, Name: name, Command: expandHome(command), DBPath: expandHome(dbPath), ConfigHome: expandHome(configHome), SkipPermissions: skipPermissionsOf(fields)})
+	}
 
 	var moveHosts []string
 	if list, ok := parsed["moveHosts"].([]any); ok {
@@ -175,6 +194,7 @@ func ParseConfig(raw []byte) (Config, error) {
 		Setup:                setup,
 		SkipPermissions:      skip,
 		Opencode:             opencode,
+		OpencodeAccounts:     opencodeAccounts,
 		ClaudeAccounts:       claude,
 		DefaultClaudeAccount: pickDefault(claude, parsed["defaultClaudeAccount"]),
 		CodexAccounts:        codex,
@@ -214,6 +234,7 @@ func defaultFirst(accounts []Account, defaultName string) []Account {
 // then every Claude account, then every Codex account.
 func (config Config) Targets() []Account {
 	targets := []Account{config.Opencode}
+	targets = append(targets, config.OpencodeAccounts...)
 	targets = append(targets, defaultFirst(config.ClaudeAccounts, config.DefaultClaudeAccount)...)
 	return append(targets, defaultFirst(config.CodexAccounts, config.DefaultCodexAccount)...)
 }

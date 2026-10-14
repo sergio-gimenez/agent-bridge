@@ -336,6 +336,30 @@ done
 
 ## Multiple accounts
 
+OpenCode wrappers with separate stores can appear as additional targets while
+keeping the default `oc` target. For example:
+
+```json
+{
+  "opencodeAccounts": [
+    {
+      "name": "opencode-i2cat",
+      "command": "opencode-i2cat",
+      "dbPath": "~/.local/share/opencode-i2cat-v1/opencode/opencode.db",
+      "configHome": "~/.config/opencode-i2cat-v1"
+    }
+  ]
+}
+```
+
+`command` names an executable or wrapper on your PATH (or an absolute path);
+the wrapper sets its own environment. `dbPath` identifies its session store.
+`configHome` optionally sets the XDG configuration root used by setup plans.
+Run `agb --target opencode-i2cat` or choose it with `Ctrl+T`; `agb new --target
+opencode-i2cat` starts a blank conversation. Switching between isolated stores
+creates a transcript-seeded fork, while resuming within a store uses its wrapper
+and original session ID. Each store gets its own session cache.
+
 Claude Code and Codex each keep credentials, config and session history under a
 single home directory, which makes a second account nothing more than a second
 home. Use each tool's normal home for the first account and an isolated one for

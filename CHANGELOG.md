@@ -47,6 +47,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Several OpenCode stores.** `opencodeAccounts` entries (`name`, `command`,
+  `dbPath`, optional `configHome`) add OpenCode wrappers with their own session
+  database as extra targets beside `oc`. Resuming stays in the session's store
+  and wrapper; crossing stores is a seeded fork. Each store is cached separately.
 - Subscription-aware target suggestions. The picker asynchronously compares
   rolling Claude Code and Codex limits across configured accounts, marks blocked
   subscriptions, and suggests the account with the greatest headroom in its

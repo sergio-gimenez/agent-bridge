@@ -145,7 +145,7 @@ func OpenOpencodeSession(id, directory string, opts OpenOptions) (int, error) {
 	if opts.SkipPermissions {
 		args = append(args, "--auto")
 	}
-	return launch("opencode", args, directory, nil)
+	return launch(opencodeCommand(opts.Account), args, directory, nil)
 }
 
 func OpenClaudeSession(id, directory string, opts OpenOptions) (int, error) {
@@ -176,7 +176,7 @@ func OpenCodexSession(id, directory string, opts OpenOptions) (int, error) {
 // Codex, so open a fresh session in the target tool seeded with the transcript.
 
 func OpenOpencodeFresh(directory, prompt string, opts OpenOptions) (int, error) {
-	if opencodeV2() {
+	if opencodeAccountV2(opts.Account) {
 		// OpenCode 2's run is headless and has no --dir. The TUI takes the
 		// directory as its argument and puts --prompt in its composer, where
 		// Enter sends it.
@@ -184,14 +184,14 @@ func OpenOpencodeFresh(directory, prompt string, opts OpenOptions) (int, error) 
 		if opts.SkipPermissions {
 			args = append(args, "--auto")
 		}
-		return launch("opencode", append(args, "--prompt", prompt, directory), directory, nil)
+		return launch(opencodeCommand(opts.Account), append(args, "--prompt", prompt, directory), directory, nil)
 	}
 	args := []string{"run"}
 	if opts.SkipPermissions {
 		args = append(args, "--auto")
 	}
 	args = append(args, "--dir", directory, prompt)
-	return launch("opencode", args, directory, nil)
+	return launch(opencodeCommand(opts.Account), args, directory, nil)
 }
 
 func OpenClaudeFresh(directory, prompt string, opts OpenOptions) (int, error) {
@@ -238,7 +238,7 @@ func OpenWith(session Session, target Account, opts OpenOptions) (int, error) {
 
 	// OpenCode 2's TUI has no --fork (only its headless run does), so a fork
 	// there takes the seeded route below, like any other new session.
-	opencodeSeedFork := target.Tool == SourceOpencode && opts.Fork && opencodeV2()
+	opencodeSeedFork := target.Tool == SourceOpencode && opts.Fork && opencodeAccountV2(&target)
 	if IsNativeTarget(&session, &target) && !opencodeSeedFork {
 		switch target.Tool {
 		case SourceClaude:
@@ -282,7 +282,7 @@ func OpenNew(directory string, target Account, opts OpenOptions) (int, error) {
 			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 		}
 	case SourceOpencode:
-		command = "opencode"
+		command = opencodeCommand(&target)
 		if opts.SkipPermissions {
 			args = append(args, "--auto")
 		}

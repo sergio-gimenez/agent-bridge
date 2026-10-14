@@ -96,6 +96,9 @@ func setupDestination(account Account, override SetupDestination, base string) (
 		dest.SkillsDir = filepath.Join(home, ".agents", "skills")
 	case SourceOpencode:
 		root := os.Getenv("XDG_CONFIG_HOME")
+		if account.ConfigHome != "" {
+			root = account.ConfigHome
+		}
 		if root == "" {
 			root = filepath.Join(home, ".config")
 		}
@@ -103,7 +106,7 @@ func setupDestination(account Account, override SetupDestination, base string) (
 		if fileExists(filepath.Join(root, "opencode", "opencode.jsonc")) {
 			dest.MCPConfig += "c"
 		}
-		if path := os.Getenv("OPENCODE_CONFIG"); path != "" {
+		if path := os.Getenv("OPENCODE_CONFIG"); path != "" && account.ConfigHome == "" {
 			dest.MCPConfig = path
 		}
 		dest.SkillsDir = filepath.Join(home, ".agents", "skills")

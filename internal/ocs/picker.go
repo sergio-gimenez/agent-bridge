@@ -110,7 +110,7 @@ func BadgeTarget(target *Account, pinned bool) *Account {
 // "Claude Code CC2" rather than a bare label, so the hint line reads as a
 // sentence.
 func destinationName(target *Account) string {
-	if target.Tool == SourceOpencode {
+	if target.Tool == SourceOpencode && (target.Name == "oc" || target.Name == "") {
 		return ToolName(target.Tool)
 	}
 	return ToolName(target.Tool) + " " + AccountLabel(target.Tool, target)
