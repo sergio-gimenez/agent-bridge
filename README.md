@@ -96,6 +96,7 @@ Shift while dragging to select terminal text in terminals that support it.
 | `Ctrl+Y` | Toggle yolo: bypass permission checks for this launch only |
 | `Ctrl+O` | Push the session to another machine ([push and pull](docs/push-pull.md)) |
 | `Ctrl+R` | Browse another machine's sessions; `Enter` there pulls one and resumes it here |
+| `Ctrl+G` | Pin the suggested subscription as the target |
 | `Ctrl+←` `Ctrl+→` | Move the divider between the list and the card; the width is remembered |
 | `Esc` `Ctrl+C` | Cancel |
 
@@ -119,6 +120,13 @@ to. Cycling pins a destination: the header shows `target CX2`, crossing rows get
 an arrow, and the card spells out where `Enter` will open the session. The
 footer always says what `Enter` and `Tab` will do, and a red `YOLO` in the
 header means the launch will skip permission checks.
+
+The header also suggests the configured subscription with the most headroom.
+AgentBridge compares the least remaining capacity across each account's rolling
+windows, ignores blocked and unknown accounts, and keeps configuration order as
+the tie-breaker. This is advice only: `Enter` still resumes a session in its own
+account unless you pin another target. `Ctrl+G` pins the suggestion. The
+selected target's limits appear in the detail card.
 
 `Ctrl+←` and `Ctrl+→` move the divider between the list and the card, and the
 next launch opens with the same split. On macOS those keys switch Spaces by
@@ -443,7 +451,27 @@ The setting follows the *target*, not the session: forking a `cc1` session into
 | `agb push HOST ID` | Push a session to another machine ([push and pull](docs/push-pull.md)) |
 | `agb push ID` | The same, asking for the host and directory |
 | `agb pull HOST ID` | Pull a session from another machine |
+| `agb limits` | Show subscription headroom and the suggested target |
+| `agb limits --json` | Stable target/limit report for launchers and integrations |
+| `agb limits --refresh` | Bypass the two-minute usage cache |
 | `agb setup`, `agb plan`, `agb sync` | Shared skills and MCPs ([setup](docs/setup.md)) |
+
+### Subscription suggestions
+
+Claude Code limits come from the account's OAuth usage endpoint; Codex limits
+come through its local app-server protocol. Each configured account is checked
+with its own `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. OpenCode is provider-agnostic,
+so it remains `unknown` until it has a provider-neutral usage interface.
+These are CLI-owned interfaces rather than a shared industry API; an older or
+changed client degrades to `unknown` or the last cached observation.
+
+Checks run after the picker's first frame and never delay opening it. A
+two-minute snapshot lives in `~/.cache/agentbridge/limits.json` with mode `0600`.
+It contains target names, percentages and reset times only—never access or
+refresh tokens. If a refresh fails, the previous observation remains available
+with its original timestamp. `agb limits --json` exposes the same
+provider-neutral report so external tools do not need to read AgentBridge's
+configuration or know provider APIs.
 
 ### Dry run
 
@@ -469,6 +497,7 @@ would run CODEX_HOME=~/.codex-cx1 codex <transcript seed, 1655 chars>
 | `agb` config | `~/.config/agentbridge/config.json` | `AGB_CONFIG_PATH` |
 | `agb` cache | `~/.cache/agentbridge/index.gob` | `AGB_CACHE_PATH`, `XDG_CACHE_HOME` |
 | Picker layout | `~/.cache/agentbridge/layout.json`, beside the cache | follows the cache |
+| Subscription limits | `~/.cache/agentbridge/limits.json`, beside the cache | follows the cache |
 | Fork handoffs | `~/.cache/agentbridge/handoffs/`, beside the cache | follows the cache |
 
 `agb` skips a store that's missing or unreadable instead of dying on it, so not

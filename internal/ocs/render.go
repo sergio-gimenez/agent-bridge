@@ -280,6 +280,19 @@ func (p *picker) renderHeader(width int, target *Account) string {
 	if p.yoloFor(target) {
 		yoloPart = alarm(" YOLO ")
 	}
+	suggestPart := ""
+	if p.usage.Recommended != "" {
+		suggestPart = dim("suggest ") + accent(strings.ToUpper(p.usage.Recommended))
+		for i := range p.usage.Accounts {
+			usage := &p.usage.Accounts[i]
+			if usage.Target == p.usage.Recommended && usage.RemainingPercent != nil {
+				suggestPart += dim(fmt.Sprintf(" %.0f%% free", *usage.RemainingPercent))
+				break
+			}
+		}
+	} else if p.usageLoading {
+		suggestPart = dim("checking limits…")
+	}
 	// While browsing another machine, which one comes first: it changes what
 	// every key does.
 	machinePart := ""
@@ -292,16 +305,17 @@ func (p *picker) renderHeader(width int, target *Account) string {
 			self = "here"
 		}
 		machinePart = dim(self+" ▸ ") + accent(p.view.host())
-		targetPart, yoloPart = "", ""
+		targetPart, suggestPart, yoloPart = "", "", ""
 		if p.view.loading {
 			count = "fetching…"
 		}
 	}
 
 	// Drop the least important parts until the header fits on one row: the
-	// target first, then the count. The yolo badge stays longest, since it
-	// decides what the agent may do.
+	// suggestion first, then the target, then the count. The yolo badge stays
+	// longest, since it decides what the agent may do.
 	for _, parts := range [][]string{
+		{machinePart, dim(count), suggestPart, targetPart, yoloPart},
 		{machinePart, dim(count), targetPart, yoloPart},
 		{machinePart, dim(count), yoloPart},
 		{machinePart, yoloPart},
@@ -318,6 +332,28 @@ func (p *picker) renderHeader(width int, target *Account) string {
 		}
 	}
 	return left
+}
+
+func (p *picker) quotaLine(target *Account) string {
+	usage := p.usage.For(target)
+	if usage == nil {
+		return ""
+	}
+	label := "limits " + strings.ToUpper(usage.Target)
+	if usage.Status == UsageBlocked {
+		return red(label + " · blocked")
+	}
+	if usage.Status != UsageAvailable || len(usage.Windows) == 0 {
+		return ""
+	}
+	parts := []string{label}
+	for _, window := range usage.Windows {
+		parts = append(parts, fmt.Sprintf("%s %.0f%% used", window.Name, window.UsedPercent))
+	}
+	if usage.Recommended {
+		parts = append(parts, "suggested")
+	}
+	return dim(strings.Join(parts, " · "))
 }
 
 // projectName is the last element of a session's directory, or "~" for a
@@ -440,6 +476,12 @@ func (p *picker) renderCard(session *Session, target *Account, width, height int
 			session.ID,
 		}, " · ")
 		body = append(body, dim(highlightTerms(truncatePlain(meta, inner), terms)))
+		if quota := p.quotaLine(target); quota != "" {
+			if visibleWidth(quota) > inner {
+				quota = dim(truncatePlain(ansiPattern.ReplaceAllString(quota, ""), inner))
+			}
+			body = append(body, quota)
+		}
 		if p.view != nil {
 			body = append(body, p.remoteCardLines(session, inner, len(body))...)
 		}
@@ -544,6 +586,9 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 	}
 	if len(p.options.Hosts) > 0 {
 		hints = append(hints, hint{"^r", p.options.Hosts[0]})
+	}
+	if suggested := p.recommendedTarget(); suggested != nil && (target == nil || target.Name != suggested.Name) {
+		hints = append(hints, hint{"^g", "use " + strings.ToUpper(suggested.Name)})
 	}
 	yolo := "yolo"
 	if p.yoloFor(target) {

@@ -47,6 +47,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Subscription-aware target suggestions. The picker asynchronously compares
+  rolling Claude Code and Codex limits across configured accounts, marks blocked
+  subscriptions, and suggests the account with the greatest headroom in its
+  most constrained window without changing native resume behavior. `Ctrl+G`
+  pins that suggestion. `agb limits --json` provides the
+  provider-neutral integration contract; a private two-minute cache keeps
+  launchers fast and preserves the last observation while offline.
+
 - `docs/multiple-claude-accounts.md` walks through adding another account
   end to end: wrapper and login, `claudeAccounts`, setup profile targets and
   `memory.share`, `agb plan`/`agb sync`, and per-account integrations.
