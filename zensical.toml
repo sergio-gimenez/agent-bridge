@@ -7,7 +7,7 @@
 [project]
 site_name = "AgentBridge"
 site_description = "Your sessions and shared agent setup, in one place."
-site_url = "https://sergio-gimenez.github.io/agent-bridge/"
+site_url = "https://agentbridge.sergiogimenez.com/"
 repo_url = "https://github.com/sergio-gimenez/agent-bridge"
 repo_name = "sergio-gimenez/agent-bridge"
 edit_uri = "edit/main/docs/"
