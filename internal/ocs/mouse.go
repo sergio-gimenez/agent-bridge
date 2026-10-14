@@ -87,6 +87,25 @@ func (p *picker) handleMouse(mouse MouseEvent) (*PickResult, error) {
 	if button != 0 {
 		return nil, nil
 	} // ignore drag and other buttons
+	var buttons []panelButton
+	switch {
+	case p.panel != nil:
+		buttons = p.panel.buttons
+	case p.view != nil && p.splitWidth > 0 && p.view.asking(p.selected()):
+		buttons = p.view.buttons
+	}
+	// The panel or card sits right of the list, or at the left edge without
+	// one; its body starts below the header, a blank line and its top border,
+	// and past its "│ ".
+	x := 3
+	if p.splitWidth > 0 {
+		x = p.mouseListWidth + 4
+	}
+	for _, b := range buttons {
+		if mouse.Y == 4+b.row && mouse.X >= x+b.start && mouse.X <= x+b.end {
+			return p.handle(b.key)
+		}
+	}
 	if mouse.Y == p.mouseFooterRow {
 		p.lastClickID = ""
 		for _, h := range p.mouseHints {
