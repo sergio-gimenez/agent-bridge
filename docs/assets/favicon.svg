@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+  <title>AgentBridge</title>
+  <style>svg { stroke: #1e1e2e } @media (prefers-color-scheme: dark) { svg { stroke: #eee } }</style>
+  <!-- An arch bridge on two piers, a shell prompt under its span. -->
+  <path d="M4 44 H60"/>
+  <path d="M10 44 Q32 -4 54 44"/>
+  <path d="M10 44 V56 M54 44 V56"/>
+  <path d="M24 28 L30 33 L24 38"/>
+  <path d="M34 38 H41"/>
+</svg>

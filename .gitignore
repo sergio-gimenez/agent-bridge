@@ -2,3 +2,8 @@ bin/
 
 # Generated demo fixture home (rebuild with `make demo-fixture`).
 demo/.fixture/
+
+# Docs site build (`make docs`).
+.venv-docs/
+.site-src/
+site/
