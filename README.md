@@ -73,6 +73,14 @@ gets launched. Details in [`demo/README.md`](demo/README.md).
 
 ## Keys
 
+You can also use the mouse: click a conversation to select it, double-click
+to follow the displayed Enter action, and use the wheel over the list to move
+the selection. Right-click a conversation for its full action menu, or press
+`Ctrl+E`. Use the wheel or arrow keys to scroll the menu; click an action or
+press `Enter` to choose it. Click a visible footer action to run it, including push,
+browse, target and YOLO. The push panel's controls are clickable too. Hold
+Shift while dragging to select terminal text in terminals that support it.
+
 | Key | What it does |
 | --- | --- |
 | type | Filter by title, directory and your prompts |
@@ -80,6 +88,8 @@ gets launched. Details in [`demo/README.md`](demo/README.md).
 | `PgUp` `PgDn` `Home` `End` | Jump |
 | `Enter` | Follow the displayed route |
 | `Ctrl+F` | Fork: follow the same route, but branch into a new session |
+| `Ctrl+N` | Start a new conversation: choose an agent/account and project directory |
+| `Ctrl+E` or right-click | Open the selected conversation's action menu |
 | `Ctrl+T` | Cycle the target forwards: OpenCode → each Claude account → each Codex account |
 | `Shift+Tab` | Cycle the target backwards |
 | `Tab` | Open in the *next tool* right away, as a transcript-seeded fork |
@@ -116,7 +126,39 @@ default; free them under System Settings → Keyboard → Keyboard Shortcuts →
 Mission Control if you want them in the terminal. Below 90 columns the card is
 hidden and the list takes the whole width.
 
+## Starting a new conversation
+
+![Right-click actions and starting a blank Codex conversation](docs/actions.gif)
+
+The demo opens a conversation's right-click menu, selects a new conversation
+in that project, switches to Codex, edits the directory and clicks Start.
+It uses synthetic sessions and prints the launch command instead of running
+an agent.
+
+Click `^n new` in the footer or press `Ctrl+N`. Choose the agent and account
+with `Tab` or `Ctrl+T`, edit the project directory (`Ctrl+U` clears it), then
+press `Enter` or click `enter start`. `Ctrl+Y` toggles YOLO for this launch.
+The directory defaults to where you ran `agb`. The right-click menu also
+offers a new conversation in the selected conversation's project.
+
+You can start one directly from the command line:
+
+```sh
+agb new --target cx1 --dir ~/my-project
+```
+
+Without `--target`, `agb new` opens the chooser. Without `--dir`, it uses your
+current directory. New conversations start with a blank interactive agent;
+they don't resume a session or carry over a transcript. This also works before
+you have any saved conversations.
+
 ## Forking a session
+
+Using the `sergio.agb` Herdr plugin? Open the picker with `Ctrl+B`, then `A`.
+For a remote session, connect with
+`herdr --remote desk --remote-keybindings server` so Herdr enables the remote
+plugin's shortcut. See [Switching agents in Herdr](docs/herdr.md) for the full
+workflow, including YOLO mode and troubleshooting.
 
 `Enter` continues the picked session, so new turns land in the original
 conversation. `Ctrl+F` follows the same route but branches: you get a new session
@@ -397,6 +439,7 @@ The setting follows the *target*, not the session: forking a `cc1` session into
 
 | Command | Effect |
 | --- | --- |
+| `agb new [--target NAME] [--dir DIR]` | Start a blank conversation, or open its chooser |
 | `agb push HOST ID` | Push a session to another machine ([push and pull](docs/push-pull.md)) |
 | `agb push ID` | The same, asking for the host and directory |
 | `agb pull HOST ID` | Pull a session from another machine |

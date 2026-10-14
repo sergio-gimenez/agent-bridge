@@ -25,6 +25,12 @@ func incompleteEscape(data []byte) int {
 		case rest[0] == 'O' && len(rest) == 1:
 			return i
 		case rest[0] == '[':
+			if len(rest) >= 2 && rest[1] == 'M' {
+				if len(rest) < 5 {
+					return i
+				}
+				return -1
+			}
 			for _, b := range rest[1:] {
 				if b >= 0x40 && b <= 0x7e {
 					return -1
@@ -40,9 +46,40 @@ func incompleteEscape(data []byte) int {
 // Key is one decoded keypress: a named key, possibly with Ctrl held, or text to
 // append to the query.
 type Key struct {
-	Name string
-	Ctrl bool
-	Text string
+	Name  string
+	Ctrl  bool
+	Text  string
+	Mouse *MouseEvent
+}
+
+// MouseEvent uses one-based terminal cell coordinates. Button follows the
+// xterm encoding: 0 left, 64/65 wheel up/down, with modifier bits included.
+type MouseEvent struct {
+	X, Y    int
+	Button  int
+	Release bool
+}
+
+func decodeMouse(body string) *MouseEvent {
+	if len(body) < 2 || body[0] != '<' || (body[len(body)-1] != 'M' && body[len(body)-1] != 'm') {
+		return nil
+	}
+	parts := strings.Split(body[1:len(body)-1], ";")
+	if len(parts) != 3 {
+		return nil
+	}
+	values := [3]int{}
+	for i, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil || value < 0 {
+			return nil
+		}
+		values[i] = value
+	}
+	if values[1] == 0 || values[2] == 0 {
+		return nil
+	}
+	return &MouseEvent{Button: values[0], X: values[1], Y: values[2], Release: body[len(body)-1] == 'm'}
 }
 
 var csiNames = map[string]string{
@@ -90,6 +127,16 @@ func DecodeKeys(input []byte) []Key {
 			}
 			switch input[i+1] {
 			case '[':
+				// Consume legacy X10 reports too, so coordinates never become
+				// query text if a terminal sends these despite SGR mode.
+				if i+2 < len(input) && input[i+2] == 'M' {
+					if i+5 >= len(input) {
+						return keys
+					}
+					keys = append(keys, Key{Mouse: &MouseEvent{Button: int(input[i+3]) - 32, X: int(input[i+4]) - 32, Y: int(input[i+5]) - 32, Release: input[i+3]&3 == 3}})
+					i += 6
+					continue
+				}
 				// CSI: parameter bytes, then one final byte in 0x40..0x7e.
 				j := i + 2
 				for j < len(input) && (input[j] < 0x40 || input[j] > 0x7e) {
@@ -99,6 +146,13 @@ func DecodeKeys(input []byte) []Key {
 					return keys
 				}
 				body := string(input[i+2 : j+1])
+				if strings.HasPrefix(body, "<") {
+					if mouse := decodeMouse(body); mouse != nil {
+						keys = append(keys, Key{Mouse: mouse})
+					}
+					i = j + 1
+					continue
+				}
 				name, ok := csiNames[body]
 				ctrl := false
 				if !ok {

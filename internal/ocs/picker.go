@@ -20,6 +20,7 @@ type PickMode string
 const (
 	ModeResume PickMode = "resume"
 	ModeFork   PickMode = "fork"
+	ModeNew    PickMode = "new"
 )
 
 type PickResult struct {
@@ -34,6 +35,10 @@ type PickResult struct {
 }
 
 type PickOptions struct {
+	// WorkDirectory is the default project for a new conversation. StartNew
+	// opens the creation dialog immediately, including when no sessions exist.
+	WorkDirectory string
+	StartNew      bool
 	// Every place a session can be opened, in cycling order.
 	Targets       []Account
 	InitialTarget *Account
@@ -159,6 +164,13 @@ type picker struct {
 	stop func(pid int) error
 	// Set when background work finishes the picker (a pull, then resume).
 	done *PickResult
+
+	mouseListWidth, mouseBodyRows, mouseFooterRow int
+	mouseHints                                    []mouseHint
+	lastClickID                                   string
+	lastClickAt                                   time.Time
+	menu                                          *contextMenu
+	newConversation                               *newConversation
 }
 
 // resize moves the divider between list and card by delta percent, staying
@@ -248,6 +260,24 @@ func (p *picker) refilter() {
 // handle applies one key. It returns a result, ErrCancelled, or neither when
 // the picker should keep going.
 func (p *picker) handle(key Key) (*PickResult, error) {
+	if key.Mouse != nil {
+		return p.handleMouse(*key.Mouse)
+	}
+	p.lastClickID = ""
+	if p.menu != nil {
+		return p.handleMenu(key)
+	}
+	if p.newConversation != nil {
+		return p.handleNew(key)
+	}
+	if key.Ctrl && key.Name == "n" && p.panel == nil {
+		p.openNew(p.options.WorkDirectory)
+		return nil, nil
+	}
+	if key.Ctrl && key.Name == "e" && p.panel == nil {
+		p.openMenu(2, 3)
+		return nil, nil
+	}
 	selected := p.selected()
 	if p.panel != nil {
 		return p.handlePanel(key)
@@ -332,6 +362,12 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 		layout: options.Layout}
 	p.pinned = p.indexOfTarget(options.InitialTarget)
 	p.refilter()
+	if p.options.WorkDirectory == "" {
+		p.options.WorkDirectory, _ = os.Getwd()
+	}
+	if options.StartNew {
+		p.openNew(p.options.WorkDirectory)
+	}
 
 	in := int(os.Stdin.Fd())
 	state, err := term.MakeRaw(in)
@@ -340,13 +376,17 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 	}
 
 	out := os.Stdout
+	var herdrMouseErr error
 	// Alternate screen: the picker draws over a blank page and leaves the
 	// shell's scrollback exactly as it was. The real cursor is hidden; the
 	// query line draws its own.
-	fmt.Fprint(out, "\x1b[?1049h\x1b[?25l")
+	fmt.Fprint(out, "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h")
 	restore := func() {
-		fmt.Fprint(out, "\x1b[?25h\x1b[?1049l")
+		fmt.Fprint(out, "\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l")
 		_ = term.Restore(in, state)
+		if herdrMouseErr != nil {
+			fmt.Fprintln(os.Stderr, herdrMouseErr)
+		}
 		if p.layoutChanged && options.SaveLayout != nil {
 			options.SaveLayout(p.layout)
 		}
@@ -394,6 +434,7 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 	defer spin.Stop()
 
 	draw()
+	herdrMouseErr = enableHerdrRightClick()
 	if options.AfterFirstDraw != nil {
 		options.AfterFirstDraw()
 	}

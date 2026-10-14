@@ -39,6 +39,8 @@ func run() (int, error) {
 			return ocs.RunSetupCommand(os.Args[1], os.Args[2:], os.Stdout)
 		case "push":
 			return ocs.RunPushCommand(os.Args[2:], os.Stdout)
+		case "new":
+			return runNew(os.Args[2:])
 		case "pull":
 			return ocs.RunPullCommand(os.Args[2:], os.Stdout)
 		case "open":
@@ -122,10 +124,50 @@ func run() (int, error) {
 	if picked.SkipPermissions != nil {
 		skip = *picked.SkipPermissions
 	}
+	if picked.Mode == ocs.ModeNew {
+		return ocs.OpenNew(picked.Session.Directory, picked.Target, ocs.OpenOptions{SkipPermissions: skip})
+	}
 	return ocs.OpenWith(picked.Session, picked.Target, ocs.OpenOptions{
 		SkipPermissions: skip,
 		Fork:            picked.Mode == ocs.ModeFork,
 	})
+}
+
+func runNew(argv []string) (int, error) {
+	directory, args, err := ocs.ParseNewArgs(argv)
+	if err != nil {
+		return 2, err
+	}
+	if args.Help {
+		ocs.PrintHelp(os.Stdout)
+		return 0, nil
+	}
+	if directory == "" {
+		directory, err = os.Getwd()
+		if err != nil {
+			return 1, err
+		}
+	}
+	config := ocs.LoadConfig()
+	target, err := resolveTarget(config, args.Target)
+	if err != nil {
+		return 1, err
+	}
+	skipFor := func(target ocs.Account) bool { return config.DefaultSkipPermissions(args.SkipPermissions, target) }
+	var picked ocs.PickResult
+	if target == nil {
+		picked, err = ocs.PickSession(nil, "", ocs.PickOptions{Targets: config.Targets(), StartNew: true, WorkDirectory: directory, SkipPermissions: skipFor})
+		if err != nil {
+			return 1, err
+		}
+	} else {
+		picked = ocs.PickResult{Session: ocs.Session{Directory: directory}, Target: *target, Mode: ocs.ModeNew}
+	}
+	skip := skipFor(picked.Target)
+	if picked.SkipPermissions != nil {
+		skip = *picked.SkipPermissions
+	}
+	return ocs.OpenNew(picked.Session.Directory, picked.Target, ocs.OpenOptions{SkipPermissions: skip})
 }
 
 // runOpen is Enter in the picker without the picker, so another program (a

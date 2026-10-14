@@ -4,6 +4,7 @@
 #   demo/record.sh          the picker tour       (keys.sh      -> docs/demo.cast)
 #   demo/record.sh push     push to "desk"        (keys-push.sh -> docs/push.cast)
 #   demo/record.sh pull     browse and pull       (keys-pull.sh -> docs/pull.cast)
+#   demo/record.sh actions  right-click and new   (keys-actions.sh -> docs/actions.cast)
 #
 # Regenerating a cast needs only asciinema. Turning it into the GIF that the
 # docs embed also needs agg; see demo/README.md.
@@ -16,7 +17,8 @@ case "$scenario" in
   demo) keys="$here/keys.sh"; title="AgentBridge - sessions and setup across coding agents" ;;
   push) keys="$here/keys-push.sh"; title="AgentBridge - push a session to another machine" ;;
   pull) keys="$here/keys-pull.sh"; title="AgentBridge - browse another machine and pull a session" ;;
-  *) echo "unknown demo: $scenario (demo, push or pull)" >&2; exit 1 ;;
+  actions) keys="$here/keys-actions.sh"; title="AgentBridge - right-click actions and a new conversation" ;;
+  *) echo "unknown demo: $scenario (demo, push, pull or actions)" >&2; exit 1 ;;
 esac
 cast="$root/docs/$scenario.cast"
 

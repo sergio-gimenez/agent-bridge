@@ -264,3 +264,30 @@ func OpenWith(session Session, target Account, opts OpenOptions) (int, error) {
 	}
 	return OpenOpencodeFresh(seed.Directory, seed.Prompt, opts)
 }
+
+// OpenNew starts an interactive tool without a resume id or transcript seed.
+func OpenNew(directory string, target Account, opts OpenOptions) (int, error) {
+	var args []string
+	var env []envOverride
+	command := ""
+	switch target.Tool {
+	case SourceClaude:
+		command, env = "claude", claudeEnvironment(&target)
+		if opts.SkipPermissions {
+			args = append(args, "--dangerously-skip-permissions")
+		}
+	case SourceCodex:
+		command, env = "codex", codexEnvironment(&target)
+		if opts.SkipPermissions {
+			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+		}
+	case SourceOpencode:
+		command = "opencode"
+		if opts.SkipPermissions {
+			args = append(args, "--auto")
+		}
+	default:
+		return 1, fmt.Errorf("Unknown agent: %s", target.Tool)
+	}
+	return launch(command, args, directory, env)
+}
