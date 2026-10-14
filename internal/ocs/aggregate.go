@@ -52,14 +52,22 @@ func (cache *Cache) AllSessions(config Config, scope SearchScope) []Session {
 
 	// One slot per store, filled in parallel, merged in a fixed order so equal
 	// timestamps always list the same way.
-	groups := make([][]Session, 1+len(accounts))
+	opencode := append([]Account{config.Opencode}, config.OpencodeAccounts...)
+	groups := make([][]Session, len(opencode)+len(accounts))
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		groups[0], _ = cache.OpencodeSessions(OpencodeDBPath(), scope)
-	}()
+	for i := range opencode {
+		wg.Add(1)
+		go func(slot int, account *Account) {
+			defer wg.Done()
+			groups[slot], _ = cache.OpencodeSessions(opencodeAccountDB(account), scope)
+			// The cache contains store data, not account labels. Attach the
+			// current configured owner each time, as with file-backed stores.
+			for j := range groups[slot] {
+				groups[slot][j].Account = account
+			}
+		}(i, &opencode[i])
+	}
 
 	for i := range accounts {
 		wg.Add(1)
@@ -70,7 +78,7 @@ func (cache *Cache) AllSessions(config Config, scope SearchScope) []Session {
 				source = codexSource
 			}
 			groups[slot] = cache.fileSessions(source, account, scope)
-		}(i+1, &accounts[i])
+		}(i+len(opencode), &accounts[i])
 	}
 
 	wg.Wait()

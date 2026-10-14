@@ -56,10 +56,11 @@ type cachedOpencode struct {
 }
 
 type cacheData struct {
-	Version    int
-	Files      map[string]cachedFile
-	OpencodeDB string
-	Opencode   map[string]cachedOpencode
+	Version        int
+	Files          map[string]cachedFile
+	OpencodeDB     string
+	Opencode       map[string]cachedOpencode
+	OpencodeStores map[string]map[string]cachedOpencode
 }
 
 // Cache remembers what each transcript parsed to, keyed by path and checked
@@ -101,9 +102,10 @@ func CachePath() string {
 
 func emptyCacheData() cacheData {
 	return cacheData{
-		Version:  cacheVersion,
-		Files:    map[string]cachedFile{},
-		Opencode: map[string]cachedOpencode{},
+		Version:        cacheVersion,
+		Files:          map[string]cachedFile{},
+		Opencode:       map[string]cachedOpencode{},
+		OpencodeStores: map[string]map[string]cachedOpencode{},
 	}
 }
 

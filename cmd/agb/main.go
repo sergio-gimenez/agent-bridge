@@ -35,6 +35,11 @@ func resolveTarget(config ocs.Config, requested string) (*ocs.Account, error) {
 func run() (int, error) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "help":
+			ocs.PrintGuide(os.Stdout)
+			return 0, nil
+		case "limits":
+			return ocs.RunUsageCommand(os.Args[2:], os.Stdout)
 		case "setup", "plan", "sync":
 			return ocs.RunSetupCommand(os.Args[1], os.Args[2:], os.Stdout)
 		case "push":
@@ -43,6 +48,8 @@ func run() (int, error) {
 			return runNew(os.Args[2:])
 		case "pull":
 			return ocs.RunPullCommand(os.Args[2:], os.Stdout)
+		case "open":
+			return runOpen(os.Args[2:])
 		}
 	}
 	args := ocs.ParseArgs(os.Args[1:])
@@ -99,10 +106,14 @@ func run() (int, error) {
 		InitialTarget:   initialTarget,
 		SkipPermissions: skipFor,
 		AfterFirstDraw:  save,
-		Layout:          ocs.LoadLayout(ocs.LayoutPath()),
-		Config:          config,
-		Hosts:           config.OtherHosts(),
-		Self:            ocs.MachineName(),
+		Usage:           ocs.CachedUsage(config),
+		RefreshUsage: func() ocs.UsageReport {
+			return ocs.CurrentUsage(config, false)
+		},
+		Layout: ocs.LoadLayout(ocs.LayoutPath()),
+		Config: config,
+		Hosts:  config.OtherHosts(),
+		Self:   ocs.MachineName(),
 		SaveLayout: func(layout ocs.Layout) {
 			_ = ocs.SaveLayout(ocs.LayoutPath(), layout)
 		},
@@ -166,6 +177,42 @@ func runNew(argv []string) (int, error) {
 		skip = *picked.SkipPermissions
 	}
 	return ocs.OpenNew(picked.Session.Directory, picked.Target, ocs.OpenOptions{SkipPermissions: skip})
+}
+
+// runOpen is Enter in the picker without the picker, so another program (a
+// launcher button, a script) can resume a session it found with --print.
+func runOpen(argv []string) (int, error) {
+	if ocs.ParseArgs(argv).Help {
+		ocs.PrintHelp(os.Stdout)
+		return 0, nil
+	}
+	id, fork, args, err := ocs.ParseOpenArgs(argv)
+	if err != nil {
+		return 2, err
+	}
+	config := ocs.LoadConfig()
+	target, err := resolveTarget(config, args.Target)
+	if err != nil {
+		return 1, err
+	}
+
+	cache := ocs.OpenCache(ocs.CachePath(), args.Rescan)
+	sessions := cache.AllSessions(config, args.Search)
+	_ = cache.Save()
+	session, err := ocs.FindSession(sessions, id)
+	if err != nil {
+		return 1, err
+	}
+
+	mode := ocs.ModeResume
+	if fork {
+		mode = ocs.ModeFork
+	}
+	picked := ocs.EnterDestination(session, target, mode)
+	return ocs.OpenWith(picked.Session, picked.Target, ocs.OpenOptions{
+		SkipPermissions: config.DefaultSkipPermissions(args.SkipPermissions, picked.Target),
+		Fork:            fork,
+	})
 }
 
 func main() {

@@ -47,6 +47,34 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A built-in guide.** `F1` in the picker or any of its dialogs (or `?` with an
+  empty search) opens a scrollable guide to routing, forks, accounts, limits,
+  permissions, transfers and shared setup; `agb help` prints it in the shell.
+- **Several OpenCode stores.** `opencodeAccounts` entries (`name`, `command`,
+  `dbPath`, optional `configHome`) add OpenCode wrappers with their own session
+  database as extra targets beside `oc`. Resuming stays in the session's store
+  and wrapper; crossing stores is a seeded fork. Each store is cached separately.
+- Subscription-aware target suggestions. The picker asynchronously compares
+  rolling Claude Code and Codex limits across configured accounts, marks blocked
+  subscriptions, and suggests the account with the greatest headroom in its
+  most constrained window without changing native resume behavior. `Ctrl+G`
+  pins that suggestion. `agb limits --json` provides the
+  provider-neutral integration contract; a private two-minute cache keeps
+  launchers fast and preserves the last observation while offline.
+
+- `docs/multiple-claude-accounts.md` walks through adding another account
+  end to end: wrapper and login, `claudeAccounts`, setup profile targets and
+  `memory.share`, `agb plan`/`agb sync`, and per-account integrations.
+- **Shared Claude Code memory across accounts.** A setup profile's
+  `"memory": {"share": ["cc1", "cc2"]}` keeps the first account's per-project
+  memory folders as the store and links every other account's to them, merging
+  what each already has first (new files move, `MEMORY.md` indexes are joined,
+  a file that differs is a conflict). `agb plan` shows a `memory` step per
+  project; nothing is deleted, the replaced folders go to the sync backups.
+- **`agb open SESSION-ID`** does what `Enter` does in the picker, without the
+  picker, so a launcher button or script can resume a session it found with
+  `agb --print --json`. It takes the id or a unique prefix, `--target` to route
+  it elsewhere, `--fork`, and `--dangerous`/`--safe`.
 - Mouse controls for selecting conversations, scrolling the list and using
   visible footer actions. Right-click or `Ctrl+E` opens a conversation action menu.
 - `Ctrl+N` and `agb new` start blank conversations with an agent/account and
@@ -54,7 +82,6 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Automatic right-click forwarding for the agb picker inside Herdr panes.
 - A recorded GIF of conversation actions and new conversations, plus a Herdr
   guide covering local use and transfers to remote panes.
-
 - **Push and pull sessions between your machines.** `Ctrl+O` in the picker opens
   a push panel in place of the card: it finds the project on the other machine,
   shows each check as it passes, says what will be sent, and pushes on `Enter`.
@@ -67,6 +94,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is open on either side, or when the receiving side's copy is bigger, since
   that one went on without this one. Git state is a note, never a stop. See
   [docs/push-pull.md](docs/push-pull.md).
+- When the project directory is missing on the receiving machine, push and
+  pull suggest cloning it and offer to copy it over with `rsync -a --mkpath`:
+  the command asks right after the checks, and the picker asks in a box with
+  **Copy & push** / **Copy & pull** and **Not now** buttons (`Enter`/`y`,
+  `n`, or a click). Without a terminal, or on a dry run, they print the
+  command instead.
 - `arrive` in the config: per host, a shell command run there once a pushed
   session has landed, such as opening it in a herdr tab.
 - `agb --print --json` lists sessions as JSON, with whether each is open; it is
@@ -128,6 +161,27 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **OpenCode 2 sessions show up again.** OpenCode 2 keeps sessions in
+  `session_v2` and `session_message`; AgentBridge read only the old tables, so
+  it missed every session since the upgrade, and a store without the old
+  tables (a fresh OpenCode 2 install) listed none. Both stores are read now,
+  the newer row winning for a migrated session. One untitled session (its
+  first turn failed) no longer hides every OpenCode session.
+- **Opening into OpenCode 2 follows its CLI.** A new seeded session opens the
+  TUI with `--prompt` (OpenCode 2's `run` is headless and has no `--dir`), a
+  fork takes the seeded route because the TUI has no `--fork`, and the
+  transcript comes from `opencode session export`, read from a file because
+  OpenCode 2 cuts a piped export off at 256 KiB.
+- `agb --print --json` lists OpenCode sessions too, so a local launcher can
+  offer them; `agb pull` still leaves them out, since a database row cannot
+  travel. `opencode --session <id>` counts as the session being open.
+- **Codex tables no longer end up inside an AgentBridge MCP block.** Codex adds
+  new tables (project trust, hook trust) after the last table but before
+  trailing comments, so a block at the end of `config.toml` swallowed them and
+  the next sync of that entry failed. Owned blocks are now written above the
+  first table AgentBridge does not own, a rewrite moves anything foreign out of
+  its markers, and `agb plan` shows a `repair` step for a file already in that
+  state.
 - Rows no longer advertise a route they are not going to take. While the target
   follows the selection, an unselected row used to render as `[OC→CX1]` because
   the target happened to sit on the highlighted Codex session; every badge now

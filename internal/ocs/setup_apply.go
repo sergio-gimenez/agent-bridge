@@ -136,6 +136,11 @@ func ApplySetupPlan(plan *SetupPlan) error {
 			}
 		}
 	}
+	for _, op := range plan.memory {
+		if memorySnapshot(op.From, op.To) != op.Snapshot {
+			return fmt.Errorf("memory changed since planning: %s; rerun sync", op.From)
+		}
+	}
 	backupDir := filepath.Join(filepath.Dir(plan.statePath), "sync-backups")
 	for path, file := range plan.files {
 		if file.Exists && !bytes.Equal(file.Before, file.After) {
@@ -209,6 +214,13 @@ func ApplySetupPlan(plan *SetupPlan) error {
 	}
 	if err := writeSetupFile(plan.statePath, append(raw, '\n'), 0o600); err != nil {
 		return rollback(err)
+	}
+	// Last, and outside the rollback: joining memory only renames and links,
+	// so a failure leaves every file in one of the two folders or the backups.
+	for _, op := range plan.memory {
+		if err := applyMemory(op, backupDir); err != nil {
+			return fmt.Errorf("memory %s of %s: %w (nothing deleted; see %s)", op.Project, op.Account, err, filepath.Join(backupDir, "memory"))
+		}
 	}
 	return nil
 }

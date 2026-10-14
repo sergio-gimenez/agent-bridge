@@ -10,9 +10,10 @@ import (
 	"time"
 )
 
-// `agb --print --json` lists this machine's sessions for another machine's
-// picker to browse and pull from. Only file-backed sessions are listed: OpenCode
-// keeps its sessions in a database, so they cannot travel.
+// `agb --print --json` lists this machine's sessions: for another machine's
+// picker to browse and pull from, and for anything local that offers them
+// (a launcher, a script). OpenCode sessions are listed without a file; they
+// live in a database, so ReadListing leaves them out of a pull.
 
 type listedSession struct {
 	ID          string   `json:"id"`
@@ -32,9 +33,6 @@ type listedSession struct {
 func WriteListing(out io.Writer, sessions []Session, openPID func(Session) int) error {
 	listed := []listedSession{}
 	for _, session := range sessions {
-		if session.Source != SourceClaude && session.Source != SourceCodex {
-			continue
-		}
 		entry := listedSession{ID: session.ID, Source: session.Source, Title: session.Title, Directory: session.Directory,
 			UpdatedAtMs: session.UpdatedAtMs, Prompts: session.Prompts, Assistant: session.AssistantSnippet,
 			File: session.FilePath, OpenPID: openPID(session)}
@@ -52,8 +50,15 @@ func WriteListing(out io.Writer, sessions []Session, openPID func(Session) int) 
 func ListingOpenPID() func(Session) int {
 	procs, ok := snapshotProcs()
 	return func(session Session) int {
+		if !ok {
+			return 0
+		}
+		if session.Source == SourceOpencode {
+			// Only an `opencode --session <id>` on some command line says so.
+			return procs.open("", session)
+		}
 		home, _, _, err := accountFiles(session)
-		if !ok || err != nil {
+		if err != nil {
 			return 0
 		}
 		return procs.open(home, session)

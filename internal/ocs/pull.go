@@ -24,6 +24,9 @@ type PullOptions struct {
 	Force bool
 	// The session's directory here. Empty means the same path as there.
 	LocalDir string
+	// Asks whether to copy the project over when it is all that stops the
+	// pull. nil never asks, as on a dry run or without a terminal.
+	Confirm func(question string) bool
 }
 
 // lookPath finds the tool that resumes a pulled session; tests replace it.
@@ -112,6 +115,8 @@ kv home "$HOME"
 `)
 	fmt.Fprintf(&s, "kv size \"$(stat -c %%s %s)\"\n", shellQuote(session.FilePath))
 	fmt.Fprintf(&s, "cwd=$(grep -m1 -o '\"cwd\":\"[^\"]*\"' %s | cut -d'\"' -f4); kv cwd \"$cwd\"\n", shellQuote(session.FilePath))
+	s.WriteString(`if [ -n "$cwd" ]; then kv dir "$(yes_if test -d "$cwd")"; fi
+`)
 	if session.Source == SourceClaude {
 		fmt.Fprintf(&s, "kv sibling \"$(yes_if test -d %s)\"\n", shellQuote(strings.TrimSuffix(session.FilePath, jsonlExt)))
 		fmt.Fprintf(&s, "kv memory \"$(yes_if test -d %s)\"\n", shellQuote(filepath.Join(filepath.Dir(session.FilePath), "memory")))
@@ -148,6 +153,9 @@ func RunPullCommand(argv []string, out io.Writer) (int, error) {
 	opts.DryRun = opts.DryRun || dryRunEnabled()
 	if opts.LocalDir != "" {
 		opts.LocalDir = expandHome(opts.LocalDir)
+	}
+	if !opts.DryRun {
+		opts.Confirm = terminalConfirm(os.Stdin, out)
 	}
 	return pullSession(LoadConfig(), opts, dialRemote(opts.Host, nil), out)
 }
@@ -194,8 +202,13 @@ func pull(config Config, opts PullOptions, link remote, out io.Writer) (Session,
 	if localDir == "" {
 		localDir = session.Directory
 	}
+	copyDir := false
 	if localDir == "" {
 		block("the transcript there names no directory; pass --dir")
+	} else if !isDir(localDir) && r["dir"] == "yes" {
+		copyDir = true
+		block("%s does not exist here; clone or create it first, pass --dir, or copy it over: rsync -a --mkpath %s %s",
+			ShortenHome(localDir), opts.Host+":"+shellWord(session.Directory+"/"), shellWord(localDir+"/"))
 	} else if !isDir(localDir) {
 		block("%s does not exist here (clone or create it first, or pass --dir)", ShortenHome(localDir))
 	}
@@ -271,6 +284,16 @@ func pull(config Config, opts PullOptions, link remote, out io.Writer) (Session,
 	}
 	for _, blocker := range blockers {
 		fmt.Fprintf(out, "Stop: %s\n", blocker)
+	}
+	// The project missing here is all that stops it: copy it over, and the
+	// other checks stand as they are.
+	if copyDir && len(blockers) == 1 && opts.Confirm != nil &&
+		opts.Confirm(fmt.Sprintf("Copy %s from %s to %s now with that rsync? [y/N] ", dir, opts.Host, ShortenHome(localDir))) {
+		fmt.Fprintf(out, "Copying %s from %s...\n", dir, opts.Host)
+		if err := link.Fetch(session.Directory+"/", localDir+"/", "--info=progress2"); err != nil {
+			return Session{}, 1, fmt.Errorf("copying %s from %s: %w", dir, opts.Host, err)
+		}
+		blockers = nil
 	}
 	if len(blockers) > 0 {
 		return Session{}, 2, fmt.Errorf("not pulled")

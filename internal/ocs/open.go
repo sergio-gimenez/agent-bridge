@@ -145,7 +145,7 @@ func OpenOpencodeSession(id, directory string, opts OpenOptions) (int, error) {
 	if opts.SkipPermissions {
 		args = append(args, "--auto")
 	}
-	return launch("opencode", args, directory, nil)
+	return launch(opencodeCommand(opts.Account), args, directory, nil)
 }
 
 func OpenClaudeSession(id, directory string, opts OpenOptions) (int, error) {
@@ -176,12 +176,22 @@ func OpenCodexSession(id, directory string, opts OpenOptions) (int, error) {
 // Codex, so open a fresh session in the target tool seeded with the transcript.
 
 func OpenOpencodeFresh(directory, prompt string, opts OpenOptions) (int, error) {
+	if opencodeAccountV2(opts.Account) {
+		// OpenCode 2's run is headless and has no --dir. The TUI takes the
+		// directory as its argument and puts --prompt in its composer, where
+		// Enter sends it.
+		var args []string
+		if opts.SkipPermissions {
+			args = append(args, "--auto")
+		}
+		return launch(opencodeCommand(opts.Account), append(args, "--prompt", prompt, directory), directory, nil)
+	}
 	args := []string{"run"}
 	if opts.SkipPermissions {
 		args = append(args, "--auto")
 	}
 	args = append(args, "--dir", directory, prompt)
-	return launch("opencode", args, directory, nil)
+	return launch(opencodeCommand(opts.Account), args, directory, nil)
 }
 
 func OpenClaudeFresh(directory, prompt string, opts OpenOptions) (int, error) {
@@ -200,12 +210,36 @@ func OpenCodexFresh(directory, prompt string, opts OpenOptions) (int, error) {
 	return launch("codex", append(args, prompt), directory, codexEnvironment(opts.Account))
 }
 
+// FindSession picks the session `agb open` names: an exact id, or a prefix
+// only one session starts with.
+func FindSession(sessions []Session, id string) (Session, error) {
+	var matches []Session
+	for _, session := range sessions {
+		if session.ID == id {
+			return session, nil
+		}
+		if strings.HasPrefix(session.ID, id) {
+			matches = append(matches, session)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return Session{}, fmt.Errorf("No session %s on this machine. `agb --print` lists them.", id)
+	case 1:
+		return matches[0], nil
+	}
+	return Session{}, fmt.Errorf("%d sessions start with %s; give more of the id.", len(matches), id)
+}
+
 // OpenWith follows the route to target: a native resume or fork when the
 // session already lives there, a transcript-seeded new session otherwise.
 func OpenWith(session Session, target Account, opts OpenOptions) (int, error) {
 	opts.Account = &target
 
-	if IsNativeTarget(&session, &target) {
+	// OpenCode 2's TUI has no --fork (only its headless run does), so a fork
+	// there takes the seeded route below, like any other new session.
+	opencodeSeedFork := target.Tool == SourceOpencode && opts.Fork && opencodeAccountV2(&target)
+	if IsNativeTarget(&session, &target) && !opencodeSeedFork {
 		switch target.Tool {
 		case SourceClaude:
 			return OpenClaudeSession(session.ID, session.Directory, opts)
@@ -248,7 +282,7 @@ func OpenNew(directory string, target Account, opts OpenOptions) (int, error) {
 			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 		}
 	case SourceOpencode:
-		command = "opencode"
+		command = opencodeCommand(&target)
 		if opts.SkipPermissions {
 			args = append(args, "--auto")
 		}

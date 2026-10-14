@@ -182,6 +182,8 @@ func TestSeedHugeUnicodeMessagesStayWithinBudget(t *testing.T) {
 
 func TestOpencodeSeedPreservesExportAndSummary(t *testing.T) {
 	t.Setenv("OCS_CACHE_PATH", filepath.Join(t.TempDir(), "index.gob"))
+	// No store: the OpenCode 1 CLI, and never the machine's real database.
+	t.Setenv("OPENCODE_DB_PATH", filepath.Join(t.TempDir(), "none.db"))
 	dir := t.TempDir()
 	question := "Implement this:\n```go\n\treturn nil\n```"
 	message := func(role, text string, summary bool) obj {

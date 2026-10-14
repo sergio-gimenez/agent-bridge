@@ -108,8 +108,8 @@ func (p procs) open(home string, session Session) int {
 }
 
 // resumeFlags are the arguments that put a session id next on a tool's command
-// line: claude --resume/-r <id>, codex resume <id>.
-var resumeFlags = map[string]bool{"--resume": true, "-r": true, "resume": true}
+// line: claude --resume/-r <id>, codex resume <id>, opencode --session/-s <id>.
+var resumeFlags = map[string]bool{"--resume": true, "-r": true, "resume": true, "--session": true, "-s": true}
 
 // procStart returns field 22 of /proc/<pid>/stat, the process start time.
 func procStart(pid int) (string, bool) {
@@ -137,6 +137,9 @@ type MoveOptions struct {
 	// For Claude a different path also changes the project folder the
 	// transcript goes to, since Claude keys sessions by directory.
 	RemoteDir string
+	// Asks whether to copy the project over when it is all that stops the
+	// push. nil never asks, as on a dry run or without a terminal.
+	Confirm func(question string) bool
 }
 
 // remote is the other machine; tests replace it.
@@ -237,6 +240,18 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
+// bareWord is a word the shell takes as it is.
+var bareWord = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
+
+// shellWord is shellQuote for a command a person reads and pastes: quoted only
+// when the shell would otherwise change it.
+func shellWord(value string) string {
+	if bareWord.MatchString(value) {
+		return value
+	}
+	return shellQuote(value)
+}
+
 // referencedFiles finds files the transcript names by absolute path that a
 // resumed session would want to read again: agb handoffs (handoffRoot) and other
 // Claude transcripts with their sibling directories (transcriptRoots). Anything
@@ -331,6 +346,7 @@ type moveFacts struct {
 	Session     Session
 	Home        string // the account home: CLAUDE_CONFIG_DIR or CODEX_HOME
 	RemoteDir   string // the session directory there
+	LocalDir    bool   // the session directory exists here, so it can be copied over
 	RemoteFile  string // where the transcript goes there
 	Transcript  []byte
 	WrittenAgo  time.Duration
@@ -348,6 +364,8 @@ type moveDecision struct {
 	Warnings []string
 	// What checked out, for the picker's push panel.
 	Passed []string
+	// The project is here but not there, so rsync can copy it over.
+	CopyDir bool
 }
 
 func decideMove(f moveFacts, opts MoveOptions) moveDecision {
@@ -369,10 +387,15 @@ func decideMove(f moveFacts, opts MoveOptions) moveDecision {
 	if home := homeDir(); r["home"] != home {
 		block("HOME on %s is %q, here %q: agb push needs the same home path on both machines", host, r["home"], home)
 	}
-	if r["dir"] != "yes" {
-		block("%s does not exist on %s (clone or create it first)", ShortenHome(f.RemoteDir), host)
-	} else {
+	switch {
+	case r["dir"] == "yes":
 		pass("%s exists on %s", ShortenHome(f.RemoteDir), host)
+	case f.LocalDir:
+		d.CopyDir = true
+		block("%s does not exist on %s; clone or create it first, or copy it over: rsync -a --mkpath %s %s",
+			ShortenHome(f.RemoteDir), host, shellWord(f.Session.Directory+"/"), host+":"+shellWord(f.RemoteDir+"/"))
+	default:
+		block("%s does not exist on %s (clone or create it first)", ShortenHome(f.RemoteDir), host)
 	}
 	switch {
 	case r["tool"] != "yes":
@@ -555,6 +578,9 @@ func RunPushCommand(argv []string, out io.Writer) (int, error) {
 	if opts.RemoteDir != "" {
 		opts.RemoteDir = expandHome(opts.RemoteDir)
 	}
+	if !opts.DryRun {
+		opts.Confirm = terminalConfirm(os.Stdin, out)
+	}
 
 	config := LoadConfig()
 	session, err := findSession(OpenCache(CachePath(), false).AllSessions(config, ScopeUser), opts.ID)
@@ -624,6 +650,17 @@ func moveSession(session Session, config Config, opts MoveOptions, link remote, 
 		return 1, err
 	}
 	plan.print(out)
+	if plan.offersDirCopy() && opts.Confirm != nil &&
+		opts.Confirm(fmt.Sprintf("Copy %s to %s now with that rsync? [y/N] ", ShortenHome(session.Directory), opts.Host)) {
+		fmt.Fprintf(out, "Copying %s to %s...\n", ShortenHome(session.Directory), opts.Host)
+		if err := plan.copyDir(link); err != nil {
+			return 1, err
+		}
+		if plan, err = planPush(session, config, opts, link); err != nil {
+			return 1, err
+		}
+		plan.print(out)
+	}
 	if len(plan.Decision.Blockers) > 0 {
 		return 2, fmt.Errorf("not pushed")
 	}
@@ -670,7 +707,7 @@ func planPush(session Session, config Config, opts MoveOptions, link remote) (pu
 	}
 	remoteFile := relocatedTranscript(session, remoteDir)
 	facts := moveFacts{Session: session, Home: home, Transcript: transcript, WrittenAgo: time.Since(info.ModTime()),
-		RemoteDir: remoteDir, RemoteFile: remoteFile}
+		RemoteDir: remoteDir, RemoteFile: remoteFile, LocalDir: isDir(session.Directory)}
 	facts.OpenPID, facts.CanSeeProcs = openSession(home, session)
 	if inside, err := gitOutput(session.Directory, "rev-parse", "--is-inside-work-tree"); err == nil && inside == "true" {
 		facts.GitRepo = true
@@ -752,6 +789,21 @@ func (plan pushPlan) print(out io.Writer) {
 	for _, blocker := range plan.Decision.Blockers {
 		fmt.Fprintf(out, "Stop: %s\n", blocker)
 	}
+}
+
+// offersDirCopy reports whether the project missing there is all that stops
+// the push, so copying it over lets the push go ahead.
+func (plan pushPlan) offersDirCopy() bool {
+	return plan.Decision.CopyDir && len(plan.Decision.Blockers) == 1
+}
+
+// copyDir copies the whole project directory there, untracked files and all,
+// for a project that is not cloned there.
+func (plan pushPlan) copyDir(link remote) error {
+	if err := link.CopyTo(plan.Session.Directory+"/", plan.RemoteDir+"/", "--info=progress2"); err != nil {
+		return fmt.Errorf("copying %s to %s: %w", ShortenHome(plan.Session.Directory), plan.Host, err)
+	}
+	return nil
 }
 
 // copy does the push: the session's own files replace what is there; what it

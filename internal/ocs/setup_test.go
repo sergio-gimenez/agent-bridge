@@ -471,3 +471,97 @@ func TestSetupExampleUsesConfiguredAccountNames(t *testing.T) {
 		t.Fatal("example invented account names")
 	}
 }
+
+// The shape Codex leaves behind: it adds tables after the last one but before
+// trailing comments, so a block at the end of the file ends up holding them.
+const codexSwallowed = "[features]\nhooks = true\n\n" +
+	"# AgentBridge MCP begin: docs\n[mcp_servers.docs]\nurl = 'https://docs.example/mcp'\n\n" +
+	"[projects.\"/home/me/app\"]\ntrust_level = \"trusted\"\n\n" +
+	"[hooks.state.\"/home/me/.codex/hooks.json:session_start:0:0\"]\ntrusted_hash = \"sha256:abc\"\n" +
+	"# AgentBridge MCP end: docs\n"
+
+func TestCodexBlockGivesBackTablesCodexAddedInsideIt(t *testing.T) {
+	updated, err := editNativeMCP([]byte(codexSwallowed), SourceCodex, "docs", map[string]any{"url": "https://docs.example/mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	end := bytes.Index(updated, []byte("# AgentBridge MCP end: docs"))
+	if end < 0 || end > bytes.Index(updated, []byte("[projects.")) || end > bytes.Index(updated, []byte("[hooks.state.")) {
+		t.Fatalf("Codex's tables are still inside the block:\n%s", updated)
+	}
+	before, _ := nativeRoot([]byte(codexSwallowed), SourceCodex)
+	after, _ := nativeRoot(updated, SourceCodex)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("moving the tables out changed the configuration")
+	}
+	again, err := editNativeMCP(updated, SourceCodex, "docs", map[string]any{"url": "https://docs.example/mcp"})
+	if err != nil || !bytes.Equal(again, updated) {
+		t.Fatalf("rewriting the same entry is not stable:\n%s", again)
+	}
+	removed, err := editNativeMCP(updated, SourceCodex, "docs", nil)
+	if err != nil || !bytes.Contains(removed, []byte("trusted_hash")) || bytes.Contains(removed, []byte("mcp_servers")) {
+		t.Fatalf("removal took Codex's tables with it:\n%s", removed)
+	}
+}
+
+func TestCodexBlockIsWrittenAboveTheFirstForeignTable(t *testing.T) {
+	raw := []byte("model = 'x'\n\n# features Codex reads\n[features]\nhooks = true\n")
+	updated, err := editNativeMCP(raw, SourceCodex, "docs", map[string]any{"url": "https://d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "model = 'x'\n\n# AgentBridge MCP begin: docs\n[mcp_servers.docs]\nurl = 'https://d'\n# AgentBridge MCP end: docs\n\n# features Codex reads\n[features]\nhooks = true\n"
+	if string(updated) != want {
+		t.Fatalf("got\n%s\nwant\n%s", updated, want)
+	}
+	// A second block joins the first above [features], and both stay put.
+	both, err := editNativeMCP(updated, SourceCodex, "tool", map[string]any{"command": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Index(both, []byte("[features]")) < bytes.Index(both, []byte("MCP end: tool")) {
+		t.Fatalf("second block went below a foreign table:\n%s", both)
+	}
+	for _, name := range []string{"docs", "tool"} {
+		entries, _ := nativeEntries(both, SourceCodex)
+		again, err := editNativeMCP(both, SourceCodex, name, entries[name].(map[string]any))
+		if err != nil || !bytes.Equal(again, both) {
+			t.Fatalf("rewriting %s moved things:\n%s", name, again)
+		}
+	}
+}
+
+func TestSetupRepairsACodexBlockHoldingCodexTables(t *testing.T) {
+	config, path := setupFixture(t)
+	if err := ApplySetupPlan(setupPlan(t, config, path)); err != nil {
+		t.Fatal(err)
+	}
+	target := config.Setup.Destinations["cx1"].MCPConfig
+	raw := []byte(readSeed(t, target))
+	// Codex appends a table; the end marker of the last block drifts below it.
+	marker := []byte("# AgentBridge MCP end: ")
+	last := bytes.LastIndex(raw, marker)
+	line := raw[last:]
+	swallowed := append(append(append([]byte(nil), raw[:last]...), []byte("\n[projects.\"/tmp/app\"]\ntrust_level = \"trusted\"\n")...), line...)
+	if err := os.WriteFile(target, swallowed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plan := setupPlan(t, config, path)
+	repaired := false
+	for _, step := range plan.Steps {
+		repaired = repaired || (step.Target == "cx1" && step.Action == "repair")
+	}
+	if !repaired || !plan.HasChanges() {
+		t.Fatalf("no repair planned: %+v", plan.Steps)
+	}
+	if err := ApplySetupPlan(plan); err != nil {
+		t.Fatal(err)
+	}
+	fixed := []byte(readSeed(t, target))
+	if bytes.LastIndex(fixed, marker) > bytes.Index(fixed, []byte("[projects.")) {
+		t.Fatalf("Codex's table is still inside a block:\n%s", fixed)
+	}
+	if setupPlan(t, config, path).HasChanges() {
+		t.Fatal("repaired setup still has drift")
+	}
+}

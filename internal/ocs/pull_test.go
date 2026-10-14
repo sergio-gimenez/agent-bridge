@@ -83,7 +83,9 @@ func TestPullSessionStops(t *testing.T) {
 		{"unknown id", "ffff", nil, PullOptions{}, "no session"},
 		{"unsafe id", "0c5d'; rm -rf ~", nil, PullOptions{}, "not a session id"},
 		{"open there", "0c5d", map[string]string{"open_there": "77"}, PullOptions{Force: true}, "open on desk (pid 77)"},
-		{"no directory here", "0c5d", nil, PullOptions{LocalDir: filepath.Join(workdir, "gone")}, "does not exist here"},
+		{"no directory here", "0c5d", map[string]string{"dir": "no"}, PullOptions{LocalDir: filepath.Join(workdir, "gone")}, "does not exist here (clone or create it first, or pass --dir)"},
+		// The project is there, so the stop says how to copy it over.
+		{"no directory here, but there", "0c5d", nil, PullOptions{LocalDir: filepath.Join(workdir, "gone")}, "or copy it over: rsync -a --mkpath desk:" + shellWord(workdir+"/") + " " + shellWord(filepath.Join(workdir, "gone")+"/")},
 		{"no tool here", "0c5d", nil, PullOptions{}, "Claude Code is not installed here"},
 		{"bigger here", "0c5d", map[string]string{"size": "3"}, PullOptions{}, "bigger here"},
 	}
@@ -98,6 +100,24 @@ func TestPullSessionStops(t *testing.T) {
 		code, err := pullSession(config, opts, there, &out)
 		if code == 0 || len(there.fetches) != 0 || !strings.Contains(out.String()+fmt.Sprint(err), c.want) {
 			t.Errorf("%s: code %d, err %v, fetches %v, want %q\n%s", c.name, code, err, there.fetches, c.want, out.String())
+		}
+	}
+}
+
+// The project is there but not here: asked, agb copies it over and pulls.
+func TestPullSessionCopiesTheProject(t *testing.T) {
+	linuxOnly(t)
+	config, _, _, workdir := pullFixture(t)
+	gone := filepath.Join(workdir, "gone")
+	for _, answer := range []bool{true, false} {
+		there := &loopback{}
+		asked := ""
+		confirm := func(question string) bool { asked = question; return answer }
+		var out bytes.Buffer
+		code, err := pullSession(config, PullOptions{Host: "desk", ID: "0c5d", LocalDir: gone, Confirm: confirm}, there, &out)
+		copiedDir := len(there.fetches) > 0 && strings.Join(there.fetches[0], " ") == "--info=progress2 "+workdir+"/ -> "+gone+"/"
+		if !strings.HasPrefix(asked, "Copy ~/phd from desk to ~/phd/gone now") || copiedDir != answer || (code == 0) != answer {
+			t.Fatalf("answer %v: asked %q, code %d %v, fetches %v\n%s", answer, asked, code, err, there.fetches, out.String())
 		}
 	}
 }

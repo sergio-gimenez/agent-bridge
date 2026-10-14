@@ -48,6 +48,11 @@ type PickOptions struct {
 	// Runs once the first frame is on screen, for work that should not
 	// delay it.
 	AfterFirstDraw func()
+	// Usage is a fast cached snapshot for the first frame. RefreshUsage may do
+	// provider I/O; it runs after that frame and hands the result to the picker
+	// loop, never mutating UI state from its goroutine.
+	Usage        UsageReport
+	RefreshUsage func() UsageReport
 	// The split to start with, and where to keep it when Ctrl+←/→ changed
 	// it.
 	Layout     Layout
@@ -105,7 +110,7 @@ func BadgeTarget(target *Account, pinned bool) *Account {
 // "Claude Code CC2" rather than a bare label, so the hint line reads as a
 // sentence.
 func destinationName(target *Account) string {
-	if target.Tool == SourceOpencode {
+	if target.Tool == SourceOpencode && (target.Name == "oc" || target.Name == "") {
 		return ToolName(target.Tool)
 	}
 	return ToolName(target.Tool) + " " + AccountLabel(target.Tool, target)
@@ -126,9 +131,11 @@ func clampIndex(index, length int) int {
 }
 
 type picker struct {
-	sessions []Session
-	targets  []Account
-	options  PickOptions
+	helpOpen                      bool
+	helpOffset, helpMax, helpPage int
+	sessions                      []Session
+	targets                       []Account
+	options                       PickOptions
 
 	query    string
 	active   int
@@ -165,6 +172,8 @@ type picker struct {
 	// Set when background work finishes the picker (a pull, then resume).
 	done *PickResult
 
+	usage                                         UsageReport
+	usageLoading                                  bool
 	mouseListWidth, mouseBodyRows, mouseFooterRow int
 	mouseHints                                    []mouseHint
 	lastClickID                                   string
@@ -236,6 +245,18 @@ func (p *picker) cycleTarget(step int) {
 	p.pinned = NextTarget(len(p.targets), from, step)
 }
 
+func (p *picker) recommendedTarget() *Account {
+	if p.usage.Recommended == "" {
+		return nil
+	}
+	for i := range p.targets {
+		if p.targets[i].Name == p.usage.Recommended {
+			return &p.targets[i]
+		}
+	}
+	return nil
+}
+
 func (p *picker) yoloFor(target *Account) bool {
 	if p.yolo != nil {
 		return *p.yolo
@@ -260,6 +281,13 @@ func (p *picker) refilter() {
 // handle applies one key. It returns a result, ErrCancelled, or neither when
 // the picker should keep going.
 func (p *picker) handle(key Key) (*PickResult, error) {
+	if p.helpOpen {
+		return p.handleHelp(key)
+	}
+	if key.Name == "f1" || (key.Text == "?" && p.query == "" && p.menu == nil && p.newConversation == nil && p.panel == nil) {
+		p.helpOpen, p.helpOffset = true, 0
+		return nil, nil
+	}
 	if key.Mouse != nil {
 		return p.handleMouse(*key.Mouse)
 	}
@@ -318,6 +346,10 @@ func (p *picker) handle(key Key) (*PickResult, error) {
 		}
 	case key.Ctrl && key.Name == "r":
 		p.cycleMachine()
+	case key.Ctrl && key.Name == "g":
+		if suggested := p.recommendedTarget(); suggested != nil {
+			p.pinned = p.indexOfTarget(suggested)
+		}
 	case key.Name == "backtab":
 		p.cycleTarget(-1)
 	case key.Name == "tab":
@@ -359,7 +391,7 @@ func (p *picker) handle(key Key) (*PickResult, error) {
 
 func PickSession(sessions []Session, initialQuery string, options PickOptions) (PickResult, error) {
 	p := &picker{sessions: sessions, targets: options.Targets, options: options, query: initialQuery,
-		layout: options.Layout}
+		layout: options.Layout, usage: options.Usage, usageLoading: options.RefreshUsage != nil}
 	p.pinned = p.indexOfTarget(options.InitialTarget)
 	p.refilter()
 	if p.options.WorkDirectory == "" {
@@ -430,6 +462,8 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 	var escapeTimeout <-chan time.Time
 
 	p.async = make(chan func())
+	stopped := make(chan struct{})
+	defer close(stopped)
 	spin := time.NewTicker(90 * time.Millisecond)
 	defer spin.Stop()
 
@@ -437,6 +471,18 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 	herdrMouseErr = enableHerdrRightClick()
 	if options.AfterFirstDraw != nil {
 		options.AfterFirstDraw()
+	}
+	if options.RefreshUsage != nil {
+		go func() {
+			usage := options.RefreshUsage()
+			select {
+			case p.async <- func() {
+				p.usage = usage
+				p.usageLoading = false
+			}:
+			case <-stopped:
+			}
+		}()
 	}
 	for {
 		var data []byte

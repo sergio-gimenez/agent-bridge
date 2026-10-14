@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/pelletier/go-toml/v2/unstable"
 )
 
 // JSONC normalization retains byte offsets, so edits splice only the selected
@@ -138,6 +140,137 @@ func jsonMembers(raw []byte) ([]jsonMember, int, error) {
 		close++
 	}
 	return members, close, nil
+}
+
+// tomlHeader is a real table header: where its line starts and its dotted key.
+type tomlHeader struct {
+	Line int
+	Key  []string
+}
+
+// tomlHeaders lists the table headers of a document in order. It asks the
+// parser rather than searching the text, so a multiline string or a comment
+// never reads as a header.
+func tomlHeaders(raw []byte) ([]tomlHeader, error) {
+	var parser unstable.Parser
+	parser.Reset(raw)
+	var headers []tomlHeader
+	for parser.NextExpression() {
+		node := parser.Expression()
+		if node.Kind != unstable.Table && node.Kind != unstable.ArrayTable {
+			continue
+		}
+		var header tomlHeader
+		keys := node.Key()
+		for keys.Next() {
+			part := keys.Node()
+			if header.Key == nil {
+				offset := int(part.Raw.Offset)
+				header.Line = bytes.LastIndexByte(raw[:offset], '\n') + 1
+			}
+			header.Key = append(header.Key, string(part.Data))
+		}
+		headers = append(headers, header)
+	}
+	if err := parser.Error(); err != nil {
+		return nil, err
+	}
+	return headers, nil
+}
+
+func ownsTable(header tomlHeader, key, name string) bool {
+	return len(header.Key) >= 2 && header.Key[0] == key && header.Key[1] == name
+}
+
+// placeCodexBlock writes an owned block (nil removes it). Codex rewrites its
+// config with a TOML editor that adds new tables after the last table but
+// before trailing comments, so a block at the end of the file swallows them:
+// its end marker drifts below Codex's [projects] or hook-trust tables.
+// Anything foreign found inside the markers is moved out, and a block sits
+// above the first table AgentBridge does not own, never below all of them.
+func placeCodexBlock(raw []byte, start, stop, endLen int, key, name string, block []byte) ([]byte, error) {
+	headers, err := tomlHeaders(raw)
+	if err != nil {
+		return nil, err
+	}
+	rest, at := raw, -1
+	// In place, the spacing after the end marker is already in rest; a fresh
+	// insert, or foreign tables pulled out of the block, needs a blank line.
+	separate := true
+	if start >= 0 && stop >= 0 {
+		foreign := []byte(nil)
+		for _, header := range headers {
+			if header.Line > start && header.Line < stop && !ownsTable(header, key, name) {
+				foreign = raw[header.Line : stop-endLen]
+				break
+			}
+		}
+		rest = append(append(append([]byte(nil), raw[:start]...), foreign...), raw[stop:]...)
+		at, separate = start, len(foreign) > 0
+		if headers, err = tomlHeaders(rest); err != nil {
+			return nil, err
+		}
+		// Last in the file with a foreign table to sit above: move it there.
+		if len(bytes.TrimSpace(rest[start:])) == 0 && codexInsertPoint(rest, headers) >= 0 {
+			at = -1
+		}
+	}
+	if block == nil {
+		return rest, nil
+	}
+	if at < 0 {
+		at, separate = codexInsertPoint(rest, headers), true
+	}
+	if at < 0 || at >= len(bytes.TrimRight(rest, "\n")) {
+		// Normalized, so syncing the same entry again is byte-for-byte stable.
+		head := bytes.TrimRight(rest, "\n")
+		if len(head) > 0 {
+			head = append(append([]byte(nil), head...), '\n')
+		}
+		return append(append(head, '\n'), block...), nil
+	}
+	if separate && len(bytes.TrimSpace(rest[at:])) > 0 {
+		block = append(block, '\n')
+	}
+	return splice(rest, at, at, block), nil
+}
+
+var ownedMarker = regexp.MustCompile(`(?m)^# (?:AgentBridge|ocs) MCP (begin|end): `)
+
+// codexInsertPoint is just above the first table no owned block holds,
+// together with the comments directly over it, which belong to it; -1 when
+// every table is owned. An owned block's end marker is never one of those
+// comments, so a block is never opened up.
+func codexInsertPoint(raw []byte, headers []tomlHeader) int {
+	var owned [][2]int
+	open := -1
+	for _, match := range ownedMarker.FindAllSubmatchIndex(raw, -1) {
+		if string(raw[match[2]:match[3]]) == "begin" {
+			open = match[0]
+		} else if open >= 0 {
+			owned, open = append(owned, [2]int{open, match[1]}), -1
+		}
+	}
+	for _, header := range headers {
+		inside := false
+		for _, span := range owned {
+			inside = inside || (header.Line > span[0] && header.Line < span[1])
+		}
+		if inside {
+			continue
+		}
+		at := header.Line
+		for at > 0 {
+			previous := bytes.LastIndexByte(raw[:at-1], '\n') + 1
+			line := raw[previous:at]
+			if !bytes.HasPrefix(bytes.TrimSpace(line), []byte("#")) || ownedMarker.Match(line) {
+				break
+			}
+			at = previous
+		}
+		return at
+	}
+	return -1
 }
 
 func splice(raw []byte, start, end int, value []byte) []byte {
@@ -356,13 +489,7 @@ func editNativeMCP(raw []byte, tool Source, name string, value map[string]any) (
 			encoded = bytes.TrimPrefix(encoded, []byte("[mcp_servers]\n"))
 			block = []byte("# AgentBridge MCP begin: " + name + "\n" + string(encoded) + "# AgentBridge MCP end: " + name + "\n")
 		}
-		if start >= 0 && stop >= 0 {
-			result = splice(raw, start, stop, block)
-		} else if value != nil {
-			result = append(append(append([]byte(nil), raw...), '\n'), block...)
-		} else {
-			result = raw
-		}
+		result, err = placeCodexBlock(raw, start, stop, len(end), key, name, block)
 	}
 	if err != nil {
 		return nil, err

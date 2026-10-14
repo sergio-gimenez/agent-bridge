@@ -64,6 +64,35 @@ func ParseArgs(argv []string) Options {
 	return options
 }
 
+// ParseOpenArgs reads `agb open SESSION-ID [flags]`: the picker's flags plus
+// --fork, and exactly one session id.
+func ParseOpenArgs(argv []string) (id string, fork bool, options Options, err error) {
+	var flags []string
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
+		switch {
+		case arg == "--fork":
+			fork = true
+		case targetFlags[arg] || arg == "--query":
+			flags = append(flags, arg)
+			if i+1 < len(argv) {
+				i++
+				flags = append(flags, argv[i])
+			}
+		case strings.HasPrefix(arg, "-"):
+			flags = append(flags, arg)
+		case id != "":
+			return "", false, Options{}, fmt.Errorf("agb open takes one session id, got %q and %q", id, arg)
+		default:
+			id = arg
+		}
+	}
+	if id == "" {
+		return "", false, Options{}, fmt.Errorf("usage: agb open SESSION-ID [--target NAME] [--fork] [--dangerous|--safe]")
+	}
+	return id, fork, ParseArgs(flags), nil
+}
+
 func PrintHelp(out io.Writer) {
 	fmt.Fprint(out, strings.Join([]string{
 		"AgentBridge (agb)",
@@ -72,13 +101,16 @@ func PrintHelp(out io.Writer) {
 		"with any of them, in any configured account.",
 		"",
 		"Usage:",
+		"  agb help              read the built-in guide and command reference",
 		"  agb",
 		"  agb --print",
 		"  agb --query \"mesh vpn\"",
 		"  agb --assistant",
 		"  agb --dangerous",
 		"  agb --target cx2",
+		"  agb open SESSION-ID [--target NAME] [--fork] [--dangerous|--safe]",
 		"  agb new [--target NAME] [--dir DIR] [--dangerous|--safe]",
+		"  agb limits [--json] [--refresh]",
 		"  agb setup --example",
 		"  agb plan --profile development",
 		"  agb sync --profile development",
@@ -101,10 +133,16 @@ func PrintHelp(out io.Writer) {
 		"  --rescan              ignore the session cache and rebuild it",
 		"  -h, --help            show help",
 		"",
+		"agb open does what Enter does in the picker, without the picker: the id",
+		"(or a unique prefix of it) as --print shows it, opened in its own account",
+		"unless --target says otherwise.",
 		"agb new starts a blank conversation; without --target it opens an account",
 		"and directory chooser. The directory defaults to your current directory.",
+		"agb limits reports provider subscription headroom and a suggested target;",
+		"--json is the stable integration interface and --refresh bypasses its 2m cache.",
 		"",
 		"Keys in the picker:",
+		"  F1 / ?                open the scrollable guide (? when the query is empty)",
 		"  type                  filter by title, directory and your prompts",
 		"  up/down, PgUp/PgDn    move the selection",
 		"  Enter                 follow the route shown in the badge",
@@ -113,6 +151,7 @@ func PrintHelp(out io.Writer) {
 		"  Ctrl+E / right-click  show conversation actions",
 		"  Ctrl+O                push the session to another machine (Claude Code, Codex)",
 		"  Ctrl+R                browse another machine's sessions; Enter pulls one here",
+		"  Ctrl+G                pin the suggested subscription as the target",
 		"  Ctrl+T / Shift+Tab    cycle the target forwards / backwards",
 		"  Tab                   open in the next tool, as a seeded fork",
 		"  Ctrl+Y                toggle yolo (bypass permission checks) for this launch",

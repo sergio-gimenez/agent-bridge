@@ -96,6 +96,7 @@ Shift while dragging to select terminal text in terminals that support it.
 | `Ctrl+Y` | Toggle yolo: bypass permission checks for this launch only |
 | `Ctrl+O` | Push the session to another machine ([push and pull](docs/push-pull.md)) |
 | `Ctrl+R` | Browse another machine's sessions; `Enter` there pulls one and resumes it here |
+| `Ctrl+G` | Pin the suggested subscription as the target |
 | `Ctrl+←` `Ctrl+→` | Move the divider between the list and the card; the width is remembered |
 | `Esc` `Ctrl+C` | Cancel |
 
@@ -119,6 +120,13 @@ to. Cycling pins a destination: the header shows `target CX2`, crossing rows get
 an arrow, and the card spells out where `Enter` will open the session. The
 footer always says what `Enter` and `Tab` will do, and a red `YOLO` in the
 header means the launch will skip permission checks.
+
+The header also suggests the configured subscription with the most headroom.
+AgentBridge compares the least remaining capacity across each account's rolling
+windows, ignores blocked and unknown accounts, and keeps configuration order as
+the tie-breaker. This is advice only: `Enter` still resumes a session in its own
+account unless you pin another target. `Ctrl+G` pins the suggestion. The
+selected target's limits appear in the detail card.
 
 `Ctrl+←` and `Ctrl+→` move the divider between the list and the card, and the
 next launch opens with the same split. On macOS those keys switch Spaces by
@@ -172,6 +180,9 @@ claude --resume <id> --fork-session
 opencode --session <id> --fork
 codex fork <id>
 ```
+
+`opencode --session <id> --fork` is OpenCode 1; OpenCode 2's TUI has no fork
+flag, so there a fork takes the transcript-seeded path below.
 
 Ids don't survive a hop between tools or between accounts, so across one of those
 both `Ctrl+F` and `Enter` fall back to the transcript-seeded path below. That
@@ -325,6 +336,30 @@ done
 
 ## Multiple accounts
 
+OpenCode wrappers with separate stores can appear as additional targets while
+keeping the default `oc` target. For example:
+
+```json
+{
+  "opencodeAccounts": [
+    {
+      "name": "opencode-i2cat",
+      "command": "opencode-i2cat",
+      "dbPath": "~/.local/share/opencode-i2cat-v1/opencode/opencode.db",
+      "configHome": "~/.config/opencode-i2cat-v1"
+    }
+  ]
+}
+```
+
+`command` names an executable or wrapper on your PATH (or an absolute path);
+the wrapper sets its own environment. `dbPath` identifies its session store.
+`configHome` optionally sets the XDG configuration root used by setup plans.
+Run `agb --target opencode-i2cat` or choose it with `Ctrl+T`; `agb new --target
+opencode-i2cat` starts a blank conversation. Switching between isolated stores
+creates a transcript-seeded fork, while resuming within a store uses its wrapper
+and original session ID. Each store gets its own session cache.
+
 Claude Code and Codex each keep credentials, config and session history under a
 single home directory, which makes a second account nothing more than a second
 home. Use each tool's normal home for the first account and an isolated one for
@@ -420,6 +455,12 @@ The setting follows the *target*, not the session: forking a `cc1` session into
 
 ## Command line
 
+Press `F1` in the picker or any of its dialogs to open the built-in guide.
+With an empty search, `?` opens it too. Scroll with arrow keys, `PgUp`/`PgDn`,
+`Home`/`End` or the mouse wheel; `Esc` returns to your previous view.
+The guide covers routing, forks, accounts, permissions, transfers and shared
+setup. Run `agb help` to read the same guide and command reference in your shell.
+
 | Flag | Effect |
 | --- | --- |
 | `--print` | List the 25 most recent sessions and exit, no picker |
@@ -440,7 +481,27 @@ The setting follows the *target*, not the session: forking a `cc1` session into
 | `agb push HOST ID` | Push a session to another machine ([push and pull](docs/push-pull.md)) |
 | `agb push ID` | The same, asking for the host and directory |
 | `agb pull HOST ID` | Pull a session from another machine |
+| `agb limits` | Show subscription headroom and the suggested target |
+| `agb limits --json` | Stable target/limit report for launchers and integrations |
+| `agb limits --refresh` | Bypass the two-minute usage cache |
 | `agb setup`, `agb plan`, `agb sync` | Shared skills and MCPs ([setup](docs/setup.md)) |
+
+### Subscription suggestions
+
+Claude Code limits come from the account's OAuth usage endpoint; Codex limits
+come through its local app-server protocol. Each configured account is checked
+with its own `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. OpenCode is provider-agnostic,
+so it remains `unknown` until it has a provider-neutral usage interface.
+These are CLI-owned interfaces rather than a shared industry API; an older or
+changed client degrades to `unknown` or the last cached observation.
+
+Checks run after the picker's first frame and never delay opening it. A
+two-minute snapshot lives in `~/.cache/agentbridge/limits.json` with mode `0600`.
+It contains target names, percentages and reset times only—never access or
+refresh tokens. If a refresh fails, the previous observation remains available
+with its original timestamp. `agb limits --json` exposes the same
+provider-neutral report so external tools do not need to read AgentBridge's
+configuration or know provider APIs.
 
 ### Dry run
 
@@ -466,6 +527,7 @@ would run CODEX_HOME=~/.codex-cx1 codex <transcript seed, 1655 chars>
 | `agb` config | `~/.config/agentbridge/config.json` | `AGB_CONFIG_PATH` |
 | `agb` cache | `~/.cache/agentbridge/index.gob` | `AGB_CACHE_PATH`, `XDG_CACHE_HOME` |
 | Picker layout | `~/.cache/agentbridge/layout.json`, beside the cache | follows the cache |
+| Subscription limits | `~/.cache/agentbridge/limits.json`, beside the cache | follows the cache |
 | Fork handoffs | `~/.cache/agentbridge/handoffs/`, beside the cache | follows the cache |
 
 `agb` skips a store that's missing or unreadable instead of dying on it, so not

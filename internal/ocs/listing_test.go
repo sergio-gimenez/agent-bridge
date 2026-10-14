@@ -35,7 +35,11 @@ func TestListingRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// OpenCode sessions live in a database and cannot travel, so they are left out.
+	// OpenCode sessions are listed (a local launcher can offer them), but they
+	// live in a database and cannot travel, so a pull leaves them out.
+	if !bytes.Contains(out.Bytes(), []byte(`"id":"ses_1"`)) {
+		t.Fatalf("OpenCode session missing from the listing: %s", out.Bytes())
+	}
 	if len(got) != 2 {
 		t.Fatalf("got %d sessions: %+v", len(got), got)
 	}

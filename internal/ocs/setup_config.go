@@ -26,6 +26,7 @@ type SetupProfile struct {
 	Skills    map[string]SetupSkill    `json:"skills,omitempty"`
 	MCPs      map[string]SetupMCP      `json:"mcps,omitempty"`
 	Overrides map[string]SetupOverride `json:"overrides,omitempty"`
+	Memory    *SetupMemory             `json:"memory,omitempty"`
 }
 
 type SetupOverride struct {

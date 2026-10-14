@@ -2,6 +2,7 @@ package ocs
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mattn/go-runewidth"
 )
@@ -53,6 +54,9 @@ func (p *picker) openMenu(x, y int) {
 		}
 		if len(p.options.Hosts) > 0 {
 			addKey("Browse remote conversations", Key{Name: "r", Ctrl: true})
+		}
+		if suggested := p.recommendedTarget(); suggested != nil {
+			addKey("Use suggested account "+strings.ToUpper(suggested.Name), Key{Name: "g", Ctrl: true})
 		}
 		yolo := "Enable YOLO for this launch"
 		if p.yoloFor(p.currentTarget()) {

@@ -83,13 +83,14 @@ func decodeMouse(body string) *MouseEvent {
 }
 
 var csiNames = map[string]string{
+	"11~": "f1", "P": "f1",
 	"A": "up", "B": "down", "C": "right", "D": "left",
 	"H": "home", "F": "end", "Z": "backtab",
 	"1~": "home", "7~": "home", "4~": "end", "8~": "end",
 	"5~": "pageup", "6~": "pagedown", "3~": "delete",
 }
 
-var ss3Names = map[byte]string{'A': "up", 'B': "down", 'C': "right", 'D': "left", 'H': "home", 'F': "end"}
+var ss3Names = map[byte]string{'A': "up", 'B': "down", 'C': "right", 'D': "left", 'H': "home", 'F': "end", 'P': "f1"}
 
 // rxvt spells Ctrl+arrow as SS3 with a lowercase final byte.
 var rxvtCtrlNames = map[byte]string{'a': "up", 'b': "down", 'c': "right", 'd': "left"}

@@ -2,6 +2,7 @@ package ocs
 
 import (
 	"bytes"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -170,5 +171,64 @@ func TestMousePushAndBrowse(t *testing.T) {
 	p.frame(240, 25)
 	if got := clickHint(t, p, enter); got == nil || got.PulledFrom != "desk" {
 		t.Fatalf("pull click: %+v", got)
+	}
+}
+
+// The copy-the-project questions in the push panel and the pull card answer
+// clicks on their buttons.
+func TestClickCopyQuestionButtons(t *testing.T) {
+	linuxOnly(t)
+	var (
+		p       *picker
+		link    *loopback
+		session Session
+	)
+	// click clicks the middle of a button, and checks that the frame shows
+	// its label there.
+	click := func(b panelButton, label string) Key {
+		t.Helper()
+		x := 3
+		if p.splitWidth > 0 {
+			x = p.mouseListWidth + 4
+		}
+		lines := strings.Split(ansiPattern.ReplaceAllString(p.frame(150, 34), ""), "\r\n")
+		row := []rune(lines[4+b.row-1])
+		if got := strings.TrimSpace(string(row[x+b.start-1 : x+b.end])); got != label {
+			t.Fatalf("button %+v shows %q, want %q:\n%s", b, got, label, strings.Join(lines, "\n"))
+		}
+		return Key{Mouse: &MouseEvent{X: x + (b.start+b.end)/2, Y: 4 + b.row}}
+	}
+
+	p, link, _, session = remoteFixture(t)
+	link.patch["dir"] = "no"
+	link.copied = func() { delete(link.patch, "dir") }
+	press(t, p, ctrlO)
+	screen(p)
+	press(t, p, click(p.panel.buttons[1], "Not now"))
+	if got := screen(p); strings.Contains(got, "Copy & push") || len(link.copies) != 0 {
+		t.Fatalf("Not now:\n%s", got)
+	}
+	p.panel.declined = false
+	screen(p)
+	press(t, p, click(p.panel.buttons[0], "Copy & push"))
+	if len(link.copies) == 0 || !strings.Contains(screen(p), "Pushed to desk") {
+		t.Fatalf("Copy & push: copies %v\n%s", link.copies, screen(p))
+	}
+
+	p, link, _, session = remoteFixture(t)
+	elsewhere := filepath.Join(filepath.Dir(session.Directory), "elsewhere")
+	there := session
+	there.Directory = elsewhere
+	var listing bytes.Buffer
+	if err := WriteListing(&listing, []Session{there}, func(Session) int { return 0 }); err != nil {
+		t.Fatal(err)
+	}
+	cannedListing = listing.String()
+	link.patch["cwd"], link.patch["dir"] = elsewhere, "yes"
+	press(t, p, ctrlR, enter)
+	screen(p)
+	result := press(t, p, click(p.view.buttons[0], "Copy & pull"))
+	if result == nil || result.PulledFrom != "desk" || len(link.fetches) == 0 {
+		t.Fatalf("Copy & pull: result %+v, fetches %v", result, link.fetches)
 	}
 }

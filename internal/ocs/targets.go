@@ -31,13 +31,13 @@ func ToolName(tool Source) string {
 }
 
 // SameAccount is true when two accounts drive the same tool out of the same
-// home. OpenCode has a single home, so the tool alone decides.
+// home. For OpenCode the session database identifies the store.
 func SameAccount(left, right *Account) bool {
 	if left == nil || right == nil || left.Tool != right.Tool {
 		return false
 	}
 	if left.Tool == SourceOpencode {
-		return true
+		return opencodeAccountDB(left) == opencodeAccountDB(right)
 	}
 	return left.Home == right.Home
 }

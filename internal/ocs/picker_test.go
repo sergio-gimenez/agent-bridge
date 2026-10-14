@@ -133,6 +133,7 @@ func TestDecodeKeys(t *testing.T) {
 		"\x1bOc":        {{Name: "right", Ctrl: true}},
 		"\x1bOd":        {{Name: "left", Ctrl: true}},
 		"\x14":          {{Name: "t", Ctrl: true}},
+		"\x07":          {{Name: "g", Ctrl: true}},
 		"\x19":          {{Name: "y", Ctrl: true}},
 		"\x7f":          {{Name: "backspace"}},
 		"\t":            {{Name: "tab"}},

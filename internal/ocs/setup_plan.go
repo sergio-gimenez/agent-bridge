@@ -1,6 +1,7 @@
 package ocs
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -36,6 +37,7 @@ type SetupPlan struct {
 	Warnings    []string    `json:"warnings,omitempty"`
 	files       map[string]*setupFile
 	links       []setupLink
+	memory      []setupMemoryOp
 	state       setupState
 	statePath   string
 	stateBefore []byte
@@ -94,6 +96,9 @@ func setupDestination(account Account, override SetupDestination, base string) (
 		dest.SkillsDir = filepath.Join(home, ".agents", "skills")
 	case SourceOpencode:
 		root := os.Getenv("XDG_CONFIG_HOME")
+		if account.ConfigHome != "" {
+			root = account.ConfigHome
+		}
 		if root == "" {
 			root = filepath.Join(home, ".config")
 		}
@@ -101,7 +106,7 @@ func setupDestination(account Account, override SetupDestination, base string) (
 		if fileExists(filepath.Join(root, "opencode", "opencode.jsonc")) {
 			dest.MCPConfig += "c"
 		}
-		if path := os.Getenv("OPENCODE_CONFIG"); path != "" {
+		if path := os.Getenv("OPENCODE_CONFIG"); path != "" && account.ConfigHome == "" {
 			dest.MCPConfig = path
 		}
 		dest.SkillsDir = filepath.Join(home, ".agents", "skills")
@@ -166,7 +171,8 @@ func (plan *SetupPlan) HasConflicts() bool {
 
 func (plan *SetupPlan) HasChanges() bool {
 	for _, step := range plan.Steps {
-		if step.Action == "add" || step.Action == "update" || step.Action == "remove" {
+		switch step.Action {
+		case "add", "update", "remove", "repair", "link", "move", "merge":
 			return true
 		}
 	}
@@ -292,6 +298,15 @@ func BuildSetupPlan(config Config, configPath, profileName, targetFilter string)
 			}
 		}
 	}
+	if profile.Memory != nil {
+		shared, err := profile.Memory.validate(accounts, selected)
+		if err != nil {
+			return nil, err
+		}
+		if err := plan.planMemory(shared, targetFilter); err != nil {
+			return nil, err
+		}
+	}
 	return plan, nil
 }
 
@@ -409,6 +424,15 @@ func (plan *SetupPlan) planMCP(step *SetupStep, key string, mcp SetupMCP, tool S
 		}
 		if exists && nativeMCPMatches(current, desired, tool) {
 			step.Action = "present"
+			// Same entry, but the block may need moving: Codex can leave its
+			// own tables inside the markers (see placeCodexBlock).
+			if entry, ok := current.(map[string]any); ok && tool == SourceCodex && managed {
+				relaid, err := editNativeMCP(file.After, tool, step.Name, entry)
+				if err == nil && !bytes.Equal(relaid, file.After) {
+					step.Action = "repair"
+					file.After = relaid
+				}
+			}
 			return nil
 		}
 		if exists && !managed {
