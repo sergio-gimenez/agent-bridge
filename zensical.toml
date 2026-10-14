@@ -32,7 +32,7 @@ nav = [
 [project.theme]
 language = "en"
 logo = "assets/logo.svg"
-favicon = "assets/favicon.svg"
+favicon = "assets/logo.svg"
 features = [
   "content.action.view",
   "content.code.copy",
