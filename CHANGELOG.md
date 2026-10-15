@@ -47,6 +47,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A fuller new conversation dialog.** `Ctrl+N` suggests the directories you
+  have sessions in, newest first (`↑`/`↓` or a click); typing filters them, and
+  a typed path lists the subdirectories it completes to. Every account shows a
+  bar per limit window, when the tightest window resets, and which one is
+  suggested. `←`/`→`, `Tab` or a click pick an account; `Ctrl+G` picks the
+  suggested one.
 - **A built-in guide.** `F1` in the picker or any of its dialogs (or `?` with an
   empty search) opens a scrollable guide to routing, forks, accounts, limits,
   permissions, transfers and shared setup; `agb help` prints it in the shell.

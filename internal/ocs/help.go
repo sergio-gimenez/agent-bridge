@@ -25,7 +25,7 @@ The seed preserves the opening request, latest user message, recent turns and a 
 
 Starting a blank conversation
 
-Ctrl+N opens the new conversation dialog, even with an empty session list. Tab or Ctrl+T chooses the agent/account; Shift+Tab goes backward. Type to edit the project directory, Ctrl+U clears it, and Enter starts. Esc returns to the picker. The default directory is where you ran agb.
+Ctrl+N opens the new conversation dialog, even with an empty session list. Below the directory it lists the projects you have sessions in, newest first: Up/Down or a click picks one, typing filters them, and a typed path (~/src/, /srv/) lists the subdirectories it could complete to. Ctrl+U clears the directory. Below that, every account has a bar per limit window, when its tightest window resets, and which one is suggested. Tab, Ctrl+T, Left/Right or a click choose the agent/account; Shift+Tab goes backward; Ctrl+G picks the suggested one. Enter starts. Esc returns to the picker. The default directory is where you ran agb.
 
 Ctrl+E or right-click opens actions for the selected conversation, including starting a blank conversation in its project. Use Up/Down and Enter to choose an action, or click it. Esc closes the menu.
 

@@ -143,11 +143,15 @@ in that project, switches to Codex, edits the directory and clicks Start.
 It uses synthetic sessions and prints the launch command instead of running
 an agent.
 
-Click `^n new` in the footer or press `Ctrl+N`. Choose the agent and account
-with `Tab` or `Ctrl+T`, edit the project directory (`Ctrl+U` clears it), then
-press `Enter` or click `enter start`. `Ctrl+Y` toggles YOLO for this launch.
-The directory defaults to where you ran `agb`. The right-click menu also
-offers a new conversation in the selected conversation's project.
+Click `^n new` in the footer or press `Ctrl+N`. Pick the directory from the
+projects you already have sessions in (`↑`/`↓` or a click, newest first), type to
+filter them, or type a path such as `~/src/` to list its subdirectories
+(`Ctrl+U` clears it). Below, every account has a bar per limit window (5h, 7d),
+when the tightest one resets, and which one is suggested. Choose the agent and
+account with `Tab`, `Ctrl+T`, `←`/`→` or a click, or `Ctrl+G` for the suggested
+one, then press `Enter` or click `enter start`. `Ctrl+Y` toggles YOLO for this
+launch. The directory defaults to where you ran `agb`. The right-click menu
+also offers a new conversation in the selected conversation's project.
 
 You can start one directly from the command line:
 

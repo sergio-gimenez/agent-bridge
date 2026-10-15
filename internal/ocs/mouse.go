@@ -55,6 +55,9 @@ func (p *picker) handleMouse(mouse MouseEvent) (*PickResult, error) {
 		return p.handleMenuMouse(mouse, button)
 	}
 	if p.newConversation != nil {
+		if button == 0 && p.clickNew(mouse.Y) {
+			return nil, nil
+		}
 		if button == 0 && mouse.Y == p.mouseFooterRow {
 			for _, h := range p.mouseHints {
 				if mouse.X >= h.start && mouse.X <= h.end {

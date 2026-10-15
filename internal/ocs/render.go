@@ -541,7 +541,11 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 	case p.menu != nil:
 		return p.clickableHints([]hint{{"f1", "help"}, {"enter", "choose"}, {"esc", "close menu"}}, width)
 	case p.newConversation != nil:
-		return p.clickableHints([]hint{{"f1", "help"}, {"enter", "start"}, {"^t", "agent/account"}, {"^y", "yolo"}, {"esc", "back"}}, width)
+		hints := []hint{{"f1", "help"}, {"enter", "start"}, {"^t", "agent/account"}}
+		if suggested := p.recommendedTarget(); suggested != nil {
+			hints = append(hints, hint{"^g", "use " + strings.ToUpper(suggested.Name)})
+		}
+		return p.clickableHints(append(hints, hint{"^y", "yolo"}, hint{"esc", "back"}), width)
 	case p.panel != nil:
 		return p.clickableHints(append([]hint{{"f1", "help"}}, p.panelHints()...), width)
 	case p.view != nil:
@@ -588,7 +592,7 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 		}
 	}
 	if len(p.options.Hosts) > 0 {
-		hints = append(hints, hint{"^r", p.options.Hosts[0]})
+		hints = append(hints, hint{"^r", "pull from " + p.options.Hosts[0]})
 	}
 	if suggested := p.recommendedTarget(); suggested != nil && (target == nil || target.Name != suggested.Name) {
 		hints = append(hints, hint{"^g", "use " + strings.ToUpper(suggested.Name)})

@@ -5,13 +5,28 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type newConversation struct {
+	// The directory the conversation starts in, as typed or as chosen from
+	// the suggestions.
 	directory string
-	target    int
-	err       string
-	yolo      *bool
+	// What the suggestions are filtered by: the directory as last typed, so
+	// moving through them does not refilter the list under the cursor.
+	query string
+	// The highlighted suggestion, -1 when the directory is as typed.
+	choice   int
+	projects []dirSuggestion
+	// The suggestions for query, recomputed only when it changes.
+	suggestions  []dirSuggestion
+	suggestedFor *string
+	target       int
+	err          string
+	yolo         *bool
+	// Screen rows of the first suggestion and the first account, for clicks;
+	// 0 when not drawn. dirOffset is the first suggestion shown.
+	dirRow, dirOffset, dirShown, accountRow int
 }
 
 func (p *picker) openNew(directory string) {
@@ -22,7 +37,39 @@ func (p *picker) openNew(directory string) {
 	if target < 0 {
 		target = 0
 	}
-	p.newConversation = &newConversation{directory: directory, target: target, yolo: p.yolo}
+	dialog := &newConversation{directory: directory, target: target, yolo: p.yolo, choice: -1, projects: p.recentProjects()}
+	for i, project := range dialog.dirSuggestions() {
+		if project.path == filepath.Clean(directory) {
+			dialog.choice = i
+		}
+	}
+	p.newConversation = dialog
+}
+
+func (dialog *newConversation) dirSuggestions() []dirSuggestion {
+	if dialog.suggestedFor == nil || *dialog.suggestedFor != dialog.query {
+		query := dialog.query
+		dialog.suggestions, dialog.suggestedFor = suggestDirectories(dialog.projects, query), &query
+	}
+	return dialog.suggestions
+}
+
+// typed sets the directory to what was typed and filters the suggestions by it.
+func (dialog *newConversation) typed(directory string) {
+	dialog.directory, dialog.query, dialog.choice, dialog.err = directory, directory, -1, ""
+}
+
+// choose highlights suggestion index, -1 going back to what was typed.
+func (dialog *newConversation) choose(index int) {
+	suggestions := dialog.dirSuggestions()
+	dialog.choice, dialog.err = clamp(index, -1, len(suggestions)-1), ""
+	if dialog.choice < 0 {
+		if dialog.query != "" {
+			dialog.directory = dialog.query
+		}
+		return
+	}
+	dialog.directory = ShortenHome(suggestions[dialog.choice].path)
 }
 
 func (p *picker) newYoloFor(target *Account) bool {
@@ -74,46 +121,299 @@ func (p *picker) handleNew(key Key) (*PickResult, error) {
 		dialog.target = NextTarget(len(p.targets), dialog.target, 1)
 	case key.Name == "backtab", key.Name == "left":
 		dialog.target = NextTarget(len(p.targets), dialog.target, -1)
+	case key.Name == "up":
+		dialog.choose(dialog.choice - 1)
+	case key.Name == "down":
+		dialog.choose(dialog.choice + 1)
+	case key.Name == "pageup":
+		dialog.choose(max(0, dialog.choice-max(1, dialog.dirShown)))
+	case key.Name == "pagedown":
+		dialog.choose(dialog.choice + max(1, dialog.dirShown))
+	case key.Ctrl && key.Name == "g":
+		if suggested := p.indexOfTarget(p.recommendedTarget()); suggested >= 0 {
+			dialog.target = suggested
+		}
 	case key.Ctrl && key.Name == "y":
 		value := !p.newYoloFor(p.newTarget())
 		dialog.yolo = &value
 	case key.Ctrl && key.Name == "u":
-		dialog.directory, dialog.err = "", ""
+		dialog.typed("")
 	case key.Name == "backspace":
 		runes := []rune(dialog.directory)
 		if len(runes) > 0 {
-			dialog.directory = string(runes[:len(runes)-1])
+			runes = runes[:len(runes)-1]
 		}
-		dialog.err = ""
+		dialog.typed(string(runes))
 	case key.Text != "" && !key.Ctrl:
-		dialog.directory += key.Text
-		dialog.err = ""
+		dialog.typed(dialog.directory + key.Text)
 	}
 	return nil, nil
 }
 
+// clickNew handles a click in the dialog's suggestions or accounts.
+func (p *picker) clickNew(y int) bool {
+	dialog := p.newConversation
+	bottom := 3 + p.mouseBodyRows - 1 // the box's bottom border
+	switch {
+	case y >= bottom:
+		return false
+	case dialog.dirRow > 0 && y >= dialog.dirRow && y < dialog.dirRow+dialog.dirShown:
+		dialog.choose(dialog.dirOffset + y - dialog.dirRow)
+	case dialog.accountRow > 0 && y >= dialog.accountRow && y < dialog.accountRow+len(p.targets):
+		dialog.target = y - dialog.accountRow
+	default:
+		return false
+	}
+	return true
+}
+
 func (p *picker) drawNew(lines []string, width, bodyRows int) {
 	dialog := p.newConversation
+	inner := width - 4
 	target := p.newTarget()
 	label := "No configured accounts"
 	if target != nil {
 		label = destinationName(target)
 	}
-	permissions := "Ask for permissions"
+	permissions := "asks for permissions"
 	if p.newYoloFor(target) {
-		permissions = "YOLO: bypass permission checks"
+		permissions = "YOLO: bypasses permission checks"
 	}
 	body := []string{
-		bold(truncatePlain(label, width-4)),
-		dim(permissions),
-		"Directory: " + truncatePlain(dialog.directory+"▏", max(1, width-15)),
+		bold(truncatePlain(label, inner/2)) + dim(" · "+truncatePlain(permissions, inner/2)),
+		"",
+		bold("Directory ") + truncatePlain(dialog.directory+"▏", max(1, inner-10)),
 	}
 	if dialog.err != "" {
-		body = append(body, red(truncatePlain(dialog.err, width-4)))
+		body = append(body, red(truncatePlain(dialog.err, inner)))
 	}
-	body = append(body, dim(truncatePlain("Type to edit · Ctrl+U clears the directory", width-4)), dim(truncatePlain("Tab / Ctrl+T changes agent/account · Ctrl+Y toggles YOLO", width-4)))
+
+	// What stays below the suggestions, so they take only the rows left over,
+	// but always a few, cutting the help instead.
+	below := 2
+	if len(p.targets) > 0 {
+		below += 2 + len(p.targets)
+	}
+	suggestions := dialog.dirSuggestions()
+	dialog.dirShown = min(len(suggestions), clamp(bodyRows-2-len(body)-below, 3, 8))
+	if dialog.choice >= dialog.dirOffset+dialog.dirShown {
+		dialog.dirOffset = dialog.choice - dialog.dirShown + 1
+	}
+	dialog.dirOffset = clamp(min(dialog.dirOffset, dialog.choice), 0, max(0, len(suggestions)-dialog.dirShown))
+	// The box's top border sits on screen row 3, so body line i is on row 4+i.
+	dialog.dirRow = 4 + len(body)
+	if len(suggestions) == 0 {
+		dialog.dirRow = 0
+		body = append(body, dim("  no matching directory · type a path like ~/src/"))
+	}
+	for i := dialog.dirOffset; i < dialog.dirOffset+dialog.dirShown; i++ {
+		body = append(body, p.dirRow(suggestions[i], i == dialog.choice, inner))
+	}
+	if more := len(suggestions) - dialog.dirOffset - dialog.dirShown; more > 0 {
+		body = append(body, dim(fmt.Sprintf("  … %d more", more)))
+	}
+
+	dialog.accountRow = 0
+	if len(p.targets) > 0 {
+		header, rows := p.limitRows(dialog.target, inner)
+		body = append(body, "", header)
+		dialog.accountRow = 4 + len(body)
+		body = append(body, rows...)
+	}
+	body = append(body, "", dim(truncatePlain("type or ↑↓ for the directory · tab / ←→ / click for the account · ^g suggested · ^u clear · ^y yolo", inner)))
 	box := boxed("New conversation", body, width, bodyRows)
 	for i := 0; i < bodyRows; i++ {
 		lines[i+2] = box[i]
 	}
+}
+
+func (p *picker) dirRow(entry dirSuggestion, chosen bool, inner int) string {
+	marker := "  "
+	if chosen {
+		marker = accent("▸ ")
+	}
+	info := ""
+	if entry.sessions > 0 {
+		noun := "sessions"
+		if entry.sessions == 1 {
+			noun = "session"
+		}
+		info = fmt.Sprintf("%d %s · %s", entry.sessions, noun, relativeTime(entry.updatedMs, p.now()))
+	}
+	path := truncatePlain(ShortenHome(entry.path), max(1, inner-2-visibleWidth(info)-2))
+	if chosen {
+		path = bold(path)
+	}
+	return alignRight(marker+path, dim(info), inner)
+}
+
+// limitRows is a header and one line per account: how much of each provider
+// window is used, as a bar, so the choice of account is not only the
+// suggestion's. When every account names its windows the same way the names go
+// in the header once instead of on every row.
+func (p *picker) limitRows(selected, inner int) (string, []string) {
+	labelWidth, toolWidth := 0, 0
+	var names []string
+	shared := true
+	for i := range p.targets {
+		target := &p.targets[i]
+		labelWidth = max(labelWidth, visibleWidth(AccountLabel(target.Tool, target)))
+		toolWidth = max(toolWidth, visibleWidth(ToolName(target.Tool)))
+		usage := p.usage.For(target)
+		if usage == nil {
+			continue
+		}
+		for j, window := range usage.Windows {
+			if j == len(names) {
+				names = append(names, window.Name)
+			} else if names[j] != window.Name {
+				shared = false
+			}
+		}
+	}
+	lead := 2 + labelWidth + 2 + toolWidth + 2
+	nameWidth := 0
+	if !shared {
+		for _, name := range names {
+			nameWidth = max(nameWidth, visibleWidth(name)+1)
+		}
+	}
+	// Each window is its name when not shared, the bar, " 100%" and a gap;
+	// leave about 30 cells for the reset and the suggestion.
+	bar := 8
+	if len(names) > 0 {
+		bar = clamp((inner-lead-30)/len(names)-nameWidth-7, 4, 24)
+	}
+	cell := nameWidth + bar + 5
+
+	header := bold(padLine("Account", lead-2)) + "  "
+	if shared {
+		for _, name := range names {
+			header += padLine(dim(name), cell+2)
+		}
+	}
+	var rows []string
+	for i := range p.targets {
+		target := &p.targets[i]
+		marker := "  "
+		label := padLine(AccountLabel(target.Tool, target), labelWidth)
+		if colour := sourceColor[target.Tool]; colour != nil {
+			label = colour(label)
+		}
+		tool := padLine(ToolName(target.Tool), toolWidth)
+		if i == selected {
+			marker, label, tool = accent("▸ "), bold(label), bold(tool)
+		}
+		row := marker + label + "  " + tool + "  "
+		rows = append(rows, row+p.limitCells(p.usage.For(target), len(names), nameWidth, bar, inner-lead))
+	}
+	return header, rows
+}
+
+// limitCells fits in room cells: the boxed frame cuts plain text only, so a
+// styled row must never be longer than the box.
+func (p *picker) limitCells(usage *AccountUsage, windows, nameWidth, bar, room int) string {
+	if usage == nil {
+		return dim(truncatePlain("no limits reported", room))
+	}
+	if len(usage.Windows) == 0 {
+		if usage.Status == UsageBlocked {
+			return red("blocked")
+		}
+		detail := usage.Detail
+		if usage.Status == UsageUnknown && strings.Contains(detail, "does not expose") {
+			detail = "no limits reported"
+		}
+		return dim(truncatePlain(detail, room))
+	}
+	var cells []string
+	binding := usage.Windows[0]
+	for _, window := range usage.Windows {
+		if window.UsedPercent > binding.UsedPercent {
+			binding = window
+		}
+		cell := limitBar(window.UsedPercent, bar) + " " + padLeft(fmt.Sprintf("%.0f%%", window.UsedPercent), 4)
+		if nameWidth > 0 {
+			cell = padLine(dim(window.Name), nameWidth) + cell
+		}
+		cells = append(cells, cell)
+	}
+	var tail []string
+	if usage.Status == UsageBlocked {
+		tail = append(tail, red("blocked"))
+	}
+	if usage.Recommended {
+		tail = append(tail, accent("★ suggested"))
+	}
+	switch until := untilTime(binding.ResetsAt, p.now()); until {
+	case "":
+	case "now":
+		tail = append(tail, dim(binding.Name+" resets now"))
+	default:
+		tail = append(tail, dim(binding.Name+" resets in "+until))
+	}
+	if strings.HasPrefix(usage.Detail, "cached") {
+		tail = append(tail, dim("cached"))
+	}
+	// Pad to the most windows any account has, so the tails line up, then keep
+	// as much of the tail as fits, most important first.
+	row := padLine(strings.Join(cells, "  "), windows*(nameWidth+bar+7)-2)
+	kept := ""
+	for _, part := range tail {
+		next := part
+		if kept != "" {
+			next = kept + dim(" · ") + part
+		}
+		if visibleWidth(row)+2+visibleWidth(next) > room {
+			break
+		}
+		kept = next
+	}
+	if kept == "" {
+		return row
+	}
+	return row + "  " + kept
+}
+
+// limitBar is a thin track width cells long, filled in proportion to used and
+// coloured by how close the window is to its limit.
+func limitBar(used float64, width int) string {
+	filled := clamp(int(used/100*float64(width)+0.5), 0, width)
+	if used > 0 && filled == 0 {
+		filled = 1
+	}
+	colour := green
+	switch {
+	case used >= 90:
+		colour = red
+	case used >= 70:
+		colour = yellow
+	}
+	return colour(strings.Repeat("━", filled)) + dim(strings.Repeat("─", width-filled))
+}
+
+func padLeft(value string, width int) string {
+	if gap := width - visibleWidth(value); gap > 0 {
+		return strings.Repeat(" ", gap) + value
+	}
+	return value
+}
+
+// untilTime is how long until an RFC3339 instant, as "now", "40m", "3h" or
+// "2d", or "" when the instant is unknown.
+func untilTime(instant string, now time.Time) string {
+	then, err := time.Parse(time.RFC3339, instant)
+	if err != nil {
+		return ""
+	}
+	left := then.Sub(now)
+	switch {
+	case left < time.Minute:
+		return "now"
+	case left < time.Hour:
+		return fmt.Sprintf("%dm", int(left.Minutes()))
+	case left < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(left.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(left.Hours()/24))
 }
