@@ -3,6 +3,7 @@ package ocs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,11 @@ import (
 	"path/filepath"
 	"time"
 )
+
+// errUsageSignInExpired is an account whose OAuth access token has lapsed. The
+// tool renews it the next time it runs on that account; agb never does, since
+// rotating the refresh token here would sign the tool itself out.
+var errUsageSignInExpired = errors.New("sign-in expired")
 
 var (
 	claudeUsageURL    = "https://api.anthropic.com/api/oauth/usage"
@@ -52,7 +58,7 @@ func probeClaudeUsage(ctx context.Context, account Account) (AccountUsage, error
 		return AccountUsage{}, fmt.Errorf("claude oauth credentials unavailable")
 	}
 	if credentials.OAuth.ExpiresAt > 0 && time.Now().UnixMilli() >= credentials.OAuth.ExpiresAt {
-		return AccountUsage{}, fmt.Errorf("claude oauth token expired")
+		return AccountUsage{}, errUsageSignInExpired
 	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, claudeUsageURL, nil)

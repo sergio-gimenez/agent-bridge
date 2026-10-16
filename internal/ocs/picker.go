@@ -172,8 +172,12 @@ type picker struct {
 	// Set when background work finishes the picker (a pull, then resume).
 	done *PickResult
 
-	usage                                         UsageReport
-	usageLoading                                  bool
+	usage        UsageReport
+	usageLoading bool
+	// Wakes the background refresh early, as when the new conversation
+	// dialog opens on limits older than the cache allows. Nil in tests.
+	usageKick chan struct{}
+
 	mouseListWidth, mouseBodyRows, mouseFooterRow int
 	mouseHints                                    []mouseHint
 	lastClickID                                   string
@@ -473,14 +477,28 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 		options.AfterFirstDraw()
 	}
 	if options.RefreshUsage != nil {
+		// Keep the limits current for as long as the picker stays open, not
+		// only as they were when it started.
+		p.usageKick = make(chan struct{}, 1)
 		go func() {
-			usage := options.RefreshUsage()
-			select {
-			case p.async <- func() {
-				p.usage = usage
-				p.usageLoading = false
-			}:
-			case <-stopped:
+			every := time.NewTicker(usageCacheMaxAge)
+			defer every.Stop()
+			for {
+				usage := options.RefreshUsage()
+				select {
+				case p.async <- func() {
+					p.usage = usage
+					p.usageLoading = false
+				}:
+				case <-stopped:
+					return
+				}
+				select {
+				case <-every.C:
+				case <-p.usageKick:
+				case <-stopped:
+					return
+				}
 			}
 		}()
 	}

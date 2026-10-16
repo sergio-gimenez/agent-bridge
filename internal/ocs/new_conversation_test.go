@@ -18,7 +18,7 @@ func limitsPicker() *picker {
 		{Target: "cc1", Source: SourceClaude, Status: UsageAvailable, Windows: []UsageWindow{
 			{Name: "5h", UsedPercent: 48, ResetsAt: "2026-10-15T14:30:00Z"}, {Name: "7d", UsedPercent: 59, ResetsAt: "2026-10-18T12:00:00Z"}}},
 		{Target: "cc2", Source: SourceClaude, Status: UsageBlocked, Detail: "cached; refresh unavailable", Windows: []UsageWindow{
-			{Name: "5h", UsedPercent: 100, ResetsAt: "2026-10-15T11:00:00Z"}}},
+			{Name: "5h", UsedPercent: 100, ResetsAt: "2026-10-15T12:00:30Z"}}},
 		{Target: "cx1", Source: SourceCodex, Status: UsageAvailable, Windows: []UsageWindow{{Name: "5h", UsedPercent: 0}}},
 	}}
 	finalizeUsage(&p.usage, targets, p.now())
@@ -66,6 +66,57 @@ func TestNewConversationShowsEveryAccountsLimits(t *testing.T) {
 	// Every account names its windows 5h/7d, so the names sit in the header.
 	if strings.Count(frame, "5h ") > 2 {
 		t.Errorf("window names repeated on every row:\n%s", frame)
+	}
+}
+
+// A snapshot kept because the sign-in lapsed, observed before both of its
+// windows reset: the old figures say nothing now, and it is no longer blocked.
+func TestNewConversationStaleLimits(t *testing.T) {
+	p := limitsPicker()
+	p.usage.Accounts[2] = AccountUsage{Target: "cc2", Source: SourceClaude, Status: UsageBlocked,
+		Detail: "cached; sign-in expired", Windows: []UsageWindow{
+			{Name: "5h", UsedPercent: 3, ResetsAt: "2026-10-15T02:30:00Z"},
+			{Name: "7d", UsedPercent: 100, ResetsAt: "2026-10-15T05:00:00Z"}}}
+	finalizeUsage(&p.usage, targets, p.now())
+	p.openNew("/tmp/project")
+	var row string
+	for _, line := range strings.Split(plain(p.frame(160, 30)), "\n") {
+		if strings.Contains(line, "CC2") {
+			row = line
+		}
+	}
+	for _, want := range []string{"–", "5h reset since checked", "sign-in expired: open CC2 to renew"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("CC2 row lacks %q: %s", want, row)
+		}
+	}
+	for _, stale := range []string{"3%", "100%", "blocked", "resets now"} {
+		if strings.Contains(row, stale) {
+			t.Errorf("CC2 row still shows %q: %s", stale, row)
+		}
+	}
+	if got := p.usage.Accounts[2].RemainingPercent; got == nil || *got != 100 {
+		t.Errorf("windows past their reset still limit the account: %v", got)
+	}
+}
+
+func TestNewConversationRefreshesStaleLimits(t *testing.T) {
+	p := limitsPicker()
+	p.usageKick = make(chan struct{}, 1)
+	p.usage.GeneratedAt = limitsNow.Add(-10 * time.Minute).Format(time.RFC3339)
+	p.openNew("/tmp/project")
+	if len(p.usageKick) != 1 || !p.usageLoading {
+		t.Fatal("opening on stale limits did not ask for a refresh")
+	}
+	if !strings.Contains(plain(p.frame(140, 30)), "checking limits") {
+		t.Error("the dialog does not say it is checking")
+	}
+	p.newConversation, p.usageLoading = nil, false
+	<-p.usageKick
+	p.usage.GeneratedAt = limitsNow.Format(time.RFC3339)
+	p.openNew("/tmp/project")
+	if len(p.usageKick) != 0 {
+		t.Fatal("fresh limits were refreshed again")
 	}
 }
 

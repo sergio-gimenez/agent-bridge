@@ -44,6 +44,20 @@ func (p *picker) openNew(directory string) {
 		}
 	}
 	p.newConversation = dialog
+	p.refreshStaleUsage()
+}
+
+// refreshStaleUsage asks the background refresh for new limits now when the
+// ones shown are older than the cache allows.
+func (p *picker) refreshStaleUsage() {
+	if p.usageKick == nil || p.usageLoading || usageFresh(p.usage, p.now()) {
+		return
+	}
+	select {
+	case p.usageKick <- struct{}{}:
+		p.usageLoading = true
+	default:
+	}
 }
 
 func (dialog *newConversation) dirSuggestions() []dirSuggestion {
@@ -292,6 +306,9 @@ func (p *picker) limitRows(selected, inner int) (string, []string) {
 			header += padLine(dim(name), cell+2)
 		}
 	}
+	if p.usageLoading {
+		header += dim(p.spinner() + " checking limits…")
+	}
 	var rows []string
 	for i := range p.targets {
 		target := &p.targets[i]
@@ -327,32 +344,51 @@ func (p *picker) limitCells(usage *AccountUsage, windows, nameWidth, bar, room i
 		return dim(truncatePlain(detail, room))
 	}
 	var cells []string
-	binding := usage.Windows[0]
-	for _, window := range usage.Windows {
-		if window.UsedPercent > binding.UsedPercent {
-			binding = window
+	now := p.now()
+	var binding *UsageWindow
+	reset := ""
+	for i, window := range usage.Windows {
+		var cell string
+		if window.resetBy(now) {
+			// Observed before its reset: the old figure says nothing now.
+			cell = dim(strings.Repeat("─", bar)) + " " + padLeft(dim("–"), 4)
+			if reset == "" {
+				reset = window.Name
+			}
+		} else {
+			if binding == nil || window.UsedPercent > binding.UsedPercent {
+				binding = &usage.Windows[i]
+			}
+			cell = limitBar(window.UsedPercent, bar) + " " + padLeft(fmt.Sprintf("%.0f%%", window.UsedPercent), 4)
 		}
-		cell := limitBar(window.UsedPercent, bar) + " " + padLeft(fmt.Sprintf("%.0f%%", window.UsedPercent), 4)
 		if nameWidth > 0 {
 			cell = padLine(dim(window.Name), nameWidth) + cell
 		}
 		cells = append(cells, cell)
 	}
 	var tail []string
-	if usage.Status == UsageBlocked {
+	if usage.Status == UsageBlocked && binding != nil {
 		tail = append(tail, red("blocked"))
 	}
 	if usage.Recommended {
 		tail = append(tail, accent("★ suggested"))
 	}
-	switch until := untilTime(binding.ResetsAt, p.now()); until {
-	case "":
-	case "now":
-		tail = append(tail, dim(binding.Name+" resets now"))
-	default:
-		tail = append(tail, dim(binding.Name+" resets in "+until))
+	if binding != nil {
+		switch until := untilTime(binding.ResetsAt, now); until {
+		case "":
+		case "now":
+			tail = append(tail, dim(binding.Name+" resets now"))
+		default:
+			tail = append(tail, dim(binding.Name+" resets in "+until))
+		}
 	}
-	if strings.HasPrefix(usage.Detail, "cached") {
+	if reset != "" {
+		tail = append(tail, dim(reset+" reset since checked"))
+	}
+	switch {
+	case usage.Detail == "cached; "+errUsageSignInExpired.Error():
+		tail = append(tail, yellow("sign-in expired: open "+strings.ToUpper(usage.Target)+" to renew"))
+	case strings.HasPrefix(usage.Detail, "cached"):
 		tail = append(tail, dim("cached"))
 	}
 	// Pad to the most windows any account has, so the tails line up, then keep

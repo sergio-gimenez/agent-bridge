@@ -3,6 +3,7 @@ package ocs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -76,16 +77,28 @@ func clampPercent(value float64) float64 {
 	return math.Max(0, math.Min(100, value))
 }
 
-func remainingFor(windows []UsageWindow) *float64 {
+// remainingFor is the headroom left in the tightest window. A window whose
+// reset time has passed since it was observed has reset, so it no longer
+// limits anything, though what it used since is unknown.
+func remainingFor(windows []UsageWindow, now time.Time) *float64 {
 	if len(windows) == 0 {
 		return nil
 	}
 	remaining := 100.0
 	for i := range windows {
 		windows[i].UsedPercent = clampPercent(windows[i].UsedPercent)
+		if windows[i].resetBy(now) {
+			continue
+		}
 		remaining = math.Min(remaining, 100-windows[i].UsedPercent)
 	}
 	return &remaining
+}
+
+// resetBy reports whether the window's reset time is known and not after now.
+func (window UsageWindow) resetBy(now time.Time) bool {
+	resets, err := time.Parse(time.RFC3339, window.ResetsAt)
+	return err == nil && !resets.After(now)
 }
 
 func finalizeUsage(report *UsageReport, targets []Account, now time.Time) {
@@ -107,17 +120,25 @@ func finalizeUsage(report *UsageReport, targets []Account, now time.Time) {
 	report.Recommended = ""
 	bestRemaining := -1.0
 	bestIndex := -1
+	bestCached := true
 	for i := range report.Accounts {
 		usage := &report.Accounts[i]
 		usage.Recommended = false
-		usage.RemainingPercent = remainingFor(usage.Windows)
+		usage.RemainingPercent = remainingFor(usage.Windows, now)
 		if usage.Status != UsageAvailable || usage.RemainingPercent == nil {
 			continue
 		}
+		// A figure that could not be refreshed only wins when nothing current
+		// does: its windows may have reset, but what was used since is unknown.
+		cached := strings.HasPrefix(usage.Detail, "cached")
+		if cached && !bestCached {
+			continue
+		}
 		// Strictly greater preserves configured target order as the tie-breaker.
-		if *usage.RemainingPercent > bestRemaining {
+		if *usage.RemainingPercent > bestRemaining || bestCached && !cached {
 			bestRemaining = *usage.RemainingPercent
 			bestIndex = i
+			bestCached = cached
 		}
 	}
 	if bestIndex >= 0 {
@@ -148,6 +169,9 @@ func ProbeUsage(ctx context.Context, config Config) UsageReport {
 			if err != nil {
 				usage.Status = UsageUnknown
 				usage.Detail = "usage unavailable"
+				if errors.Is(err, errUsageSignInExpired) {
+					usage.Detail = errUsageSignInExpired.Error()
+				}
 			}
 			if usage.Status == "" {
 				usage.Status = UsageUnknown
@@ -278,6 +302,9 @@ func CurrentUsage(config Config, force bool) UsageReport {
 			}
 			if fallback, ok := old[usageKey(usage.Source, usage.Target)]; ok && fallback.Status != UsageUnknown {
 				fallback.Detail = "cached; refresh unavailable"
+				if usage.Detail == errUsageSignInExpired.Error() {
+					fallback.Detail = "cached; " + usage.Detail
+				}
 				fallback.Recommended = false
 				fresh.Accounts[i] = fallback
 			}
