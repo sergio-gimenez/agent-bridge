@@ -117,6 +117,39 @@ func TestCurrentUsageKeepsLastKnownValueWhenRefreshFails(t *testing.T) {
 		usage.Detail != "cached; refresh unavailable" || report.Recommended != "cc1" {
 		t.Fatalf("fallback = %+v, report = %+v", usage, report)
 	}
+
+	// A lapsed sign-in says so, since opening the account is what fixes it.
+	usageProbes[SourceClaude] = func(context.Context, Account) (AccountUsage, error) {
+		return AccountUsage{}, errUsageSignInExpired
+	}
+	if err := WriteUsageReport(UsagePath(), old); err != nil {
+		t.Fatal(err)
+	}
+	report = CurrentUsage(config, true)
+	if usage := report.For(&config.ClaudeAccounts[0]); usage == nil || usage.Detail != "cached; sign-in expired" {
+		t.Fatalf("sign-in fallback = %+v", usage)
+	}
+}
+
+func TestSuggestionPrefersCurrentFiguresOverCached(t *testing.T) {
+	now := time.Date(2026, 10, 16, 8, 0, 0, 0, time.UTC)
+	targets := []Account{{Tool: SourceClaude, Name: "cc2"}, {Tool: SourceClaude, Name: "cc3"}}
+	report := UsageReport{Accounts: []AccountUsage{
+		// Both windows reset after it was seen, so it reads as 100% free.
+		{Target: "cc2", Source: SourceClaude, Status: UsageAvailable, Detail: "cached; sign-in expired",
+			Windows: []UsageWindow{{Name: "7d", UsedPercent: 73, ResetsAt: "2026-10-16T05:00:00Z"}}},
+		{Target: "cc3", Source: SourceClaude, Status: UsageAvailable,
+			Windows: []UsageWindow{{Name: "5h", UsedPercent: 4}}},
+	}}
+	finalizeUsage(&report, targets, now)
+	if report.Recommended != "cc3" || *report.Accounts[0].RemainingPercent != 100 {
+		t.Fatalf("suggested %q with cc2 at %v", report.Recommended, *report.Accounts[0].RemainingPercent)
+	}
+	report.Accounts[1].Status = UsageBlocked
+	finalizeUsage(&report, targets, now)
+	if report.Recommended != "cc2" {
+		t.Fatalf("with nothing current, the cached account is not suggested: %q", report.Recommended)
+	}
 }
 
 func TestDecodeCodexUsage(t *testing.T) {

@@ -53,7 +53,7 @@ func (p *picker) openMenu(x, y int) {
 			addKey("Push to another machine…", Key{Name: "o", Ctrl: true})
 		}
 		if len(p.options.Hosts) > 0 {
-			addKey("Browse remote conversations", Key{Name: "r", Ctrl: true})
+			addKey("Pull from "+p.options.Hosts[0]+"…", Key{Name: "r", Ctrl: true})
 		}
 		if suggested := p.recommendedTarget(); suggested != nil {
 			addKey("Use suggested account "+strings.ToUpper(suggested.Name), Key{Name: "g", Ctrl: true})

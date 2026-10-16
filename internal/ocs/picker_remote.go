@@ -97,7 +97,8 @@ func (p *picker) spinner() string { return spinnerFrames[p.spin%len(spinnerFrame
 // busy reports whether something is under way, so the spinner should turn.
 func (p *picker) busy() bool {
 	return p.panel != nil && (p.panel.state == panelChecking || p.panel.state == panelPushing) ||
-		p.view != nil && (p.view.loading || p.view.pulling)
+		p.view != nil && (p.view.loading || p.view.pulling) ||
+		p.newConversation != nil && p.usageLoading
 }
 
 // background runs work off the picker's loop and applies what it returns on
