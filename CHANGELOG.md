@@ -8,6 +8,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A new README and demo.** The README leads with the logo, a feature
+  overview and a diagram of where sessions go; the long reference sections
+  moved to [forks and handoffs](docs/forking.md),
+  [memory and diagrams across tools](docs/integrations.md) and
+  [configuration and internals](docs/reference.md). The demo fixture now has
+  invented subscription limits, and every recording was redone against it.
 - The project is now **AgentBridge**, with `agb` as its CLI. The local installer
   removes obsolete command aliases. Configuration, cache paths, and environment
   overrides use `~/.config/agentbridge`, `~/.cache/agentbridge`, and `AGB_*`.
@@ -53,6 +59,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bar per limit window, when the tightest window resets, and which one is
   suggested. `←`/`→`, `Tab` or a click pick an account; `Ctrl+G` picks the
   suggested one.
+- **`Ctrl+T` opens the same account list for the selection.** Instead of
+  cycling blind, it shows every account with its limit bars; `Enter` resumes
+  the conversation in the chosen one and `Ctrl+F` forks it there. `Shift+Tab`
+  still cycles the pinned target backwards.
 - **A built-in guide.** `F1` in the picker or any of its dialogs (or `?` with an
   empty search) opens a scrollable guide to routing, forks, accounts, limits,
   permissions, transfers and shared setup; `agb help` prints it in the shell.
@@ -166,6 +176,16 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   session you had only just selected.
 
 ### Fixed
+
+- The new-conversation dialog shows its starting directory as `~/…`, the way
+  its suggestions already do, instead of the absolute path.
+- **Herdr restores the original Claude or Codex account.** `agb herdr install`
+  installs native integrations and account-aware resume hooks for configured
+  accounts. Hooks track the current session after a fork, `/clear` or `/resume`
+  and keep agb's permission choice when Herdr restarts. Installation backs up
+  settings, preserves unrelated hooks and supports previews and removal. See
+  [the Herdr guide](docs/herdr.md#restore-conversations-after-a-restart) for setup
+  and recovering conversations opened before installation.
 
 - **OpenCode 2 sessions show up again.** OpenCode 2 keeps sessions in
   `session_v2` and `session_message`; AgentBridge read only the old tables, so

@@ -110,9 +110,10 @@ func TestMouseFooterUsesVisibleActions(t *testing.T) {
 	p := mousePicker()
 	p.frame(240, 20)
 	clickHint(t, p, Key{Name: "t", Ctrl: true})
-	if p.pinned < 0 {
-		t.Fatal("target click did not pin")
+	if p.newConversation == nil || p.newConversation.session == nil {
+		t.Fatal("target click did not open the account dialog")
 	}
+	press(t, p, Key{Name: "escape"})
 	p.frame(240, 20)
 	clickHint(t, p, Key{Name: "y", Ctrl: true})
 	if p.yolo == nil || !*p.yolo {

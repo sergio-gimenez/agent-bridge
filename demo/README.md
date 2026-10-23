@@ -9,10 +9,17 @@ real session history is read, and nothing is ever launched.
 make demo
 ```
 
-That builds the fixture and drops you into the real picker. Type to filter,
-`Ctrl+T` / `Shift+Tab` to cycle the target across OpenCode, both Claude accounts
-and both Codex accounts, `Enter` or `Tab` to "open", which prints the command it
-*would* have run instead of running it.
+That builds the fixture and drops you into the real picker, started in the
+fixture's `~/code/nebula-api`. Type to filter, `Ctrl+T` to choose an account
+from the limits view, `Shift+Tab` to cycle the target across OpenCode, both
+Claude accounts and both Codex accounts, and `Enter` or `Tab` to "open", which
+prints the command it *would* have run instead of running it.
+
+The subscription limits are invented too: the fixture writes
+`.cache/agentbridge/limits.json` with CC1 nearly out of its 5h window, CX1
+suggested and CX2 blocked. The picker treats that snapshot as fresh for two
+minutes, so it does not probe the fixture accounts during a recording; after
+that the probes fail and it keeps showing the snapshot as cached.
 
 ## A second machine
 
@@ -64,6 +71,7 @@ under `demo/.fixture/home`, laid out exactly where `agb` looks by default:
 .codex-cx1/sessions/...             Codex account "cx1"
 .codex-cx2/sessions/...             Codex account "cx2"
 .config/agentbridge/config.json     AgentBridge config naming every account
+.cache/agentbridge/limits.json      invented subscription limits
 ```
 
 Running the demo is then just `HOME=<that>`, with no path overrides and nothing

@@ -366,7 +366,7 @@ func (p *picker) handle(key Key) (*PickResult, error) {
 			}
 		}
 	case key.Ctrl && key.Name == "t":
-		p.cycleTarget(1)
+		p.openIn()
 	case key.Name == "up":
 		p.active = clampIndex(p.active-1, len(p.filtered))
 	case key.Name == "down":

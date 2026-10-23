@@ -540,6 +540,12 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 	switch {
 	case p.menu != nil:
 		return p.clickableHints([]hint{{"f1", "help"}, {"enter", "choose"}, {"esc", "close menu"}}, width)
+	case p.newConversation != nil && p.newConversation.session != nil:
+		hints := []hint{{"f1", "help"}, {"enter", "resume"}, {"^f", "fork"}, {"^t", "account"}}
+		if suggested := p.recommendedTarget(); suggested != nil {
+			hints = append(hints, hint{"^g", "use " + strings.ToUpper(suggested.Name)})
+		}
+		return p.clickableHints(append(hints, hint{"^y", "yolo"}, hint{"esc", "back"}), width)
 	case p.newConversation != nil:
 		hints := []hint{{"f1", "help"}, {"enter", "start"}, {"^t", "agent/account"}}
 		if suggested := p.recommendedTarget(); suggested != nil {
@@ -601,7 +607,7 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 	if p.yoloFor(target) {
 		yolo = "ask again"
 	}
-	hints = append(hints, hint{"^t", "target"}, hint{"^y", yolo}, hint{"esc", "quit"})
+	hints = append(hints, hint{"^t", "open in…"}, hint{"^y", yolo}, hint{"esc", "quit"})
 	if resizable {
 		hints = append(hints, hint{"^←→", "resize"})
 	}

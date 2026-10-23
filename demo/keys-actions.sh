@@ -36,16 +36,16 @@ pause 1800
 
 # Click agent/account in the footer: CC2 -> CX1. Toggle YOLO by clicking its
 # footer action, then turn it back off for the blank conversation we launch.
-mouse 0 20 32
+mouse 0 30 32
 pause 1700
-mouse 0 38 32
+mouse 0 48 32
 pause 1400
-mouse 0 38 32
+mouse 0 48 32
 pause 1000
 
 # Choose another existing fixture project and click Start.
 key $'\x15'
 type_text "~/code/nebula-api"
 pause 1800
-mouse 0 5 32
+mouse 0 15 32
 pause 1600

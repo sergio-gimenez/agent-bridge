@@ -35,9 +35,13 @@ func resolveTarget(config ocs.Config, requested string) (*ocs.Account, error) {
 func run() (int, error) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "herdr":
+			return ocs.RunHerdrCommand(os.Args[2:], os.Stdin, os.Stdout)
 		case "help":
 			ocs.PrintGuide(os.Stdout)
 			return 0, nil
+		case "experiment":
+			return ocs.RunExperimentCommand(os.Args[2:], os.Stdout)
 		case "limits":
 			return ocs.RunUsageCommand(os.Args[2:], os.Stdout)
 		case "setup", "plan", "sync":

@@ -28,35 +28,35 @@ type_text() {
 }
 
 # Let the merged list settle: OpenCode, two Claude accounts and two Codex
-# accounts in one list, newest first.
-pause 2000
-
-# Move down a few entries so the preview pane visibly follows the selection.
-pause 900; key "$DOWN"
-pause 700; key "$DOWN"
-pause 900; key "$DOWN"
-
-# Search by project. Every nebula-api session surfaces at once, whichever tool
-# it happens to live in.
-pause 1300; type_text "nebula"
-pause 1900
-
-# Second row is the Codex session. It shows plain CX1 and the card fills with
-# its prompts, because the target follows the selection.
-pause 900; key "$DOWN"
-pause 2200
-
-# Back up to the Claude session at the top.
-pause 1100; key "$UP"
-pause 1200
-
-# Cycle the target twice: CC1 -> CC2 -> CX1. The header shows target CX1, the
-# Claude rows grow a green arrow, and the card says Enter will carry this
-# session into Codex instead of resuming it in Claude.
-pause 1000; key "$CTRL_T"
-pause 1300; key "$CTRL_T"
+# accounts in one list, newest first, and the header suggesting the account
+# with the most headroom.
 pause 2600
 
-# Follow the displayed route.
-pause 900; key "$ENTER"
+# Move down a few entries so the card visibly follows the selection.
+pause 800; key "$DOWN"
+pause 900; key "$DOWN"
+pause 1400
+
+# Search what you asked, not only titles. "retries" was in a prompt to Claude
+# and in one to Codex, so both sessions surface and the card lights it up.
+pause 900; type_text "retries"
 pause 2200
+
+# The Codex session, then back up to the Claude one.
+pause 700; key "$DOWN"
+pause 2000
+pause 700; key "$UP"
+pause 1600
+
+# Ctrl+T asks where to open it, with every account's limits beside it. CC1 is
+# nearly out of its 5h window; CX1 is the suggestion.
+pause 800; key "$CTRL_T"
+pause 2600
+pause 600; key "$DOWN"
+pause 700; key "$DOWN"
+pause 2000
+
+# Open it in CX1. Across tools that is a transcript-seeded fork, printed rather
+# than launched because the demo runs with AGB_DRY_RUN.
+pause 800; key "$ENTER"
+pause 2600

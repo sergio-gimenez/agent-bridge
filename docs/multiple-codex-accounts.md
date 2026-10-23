@@ -36,6 +36,12 @@ cx2() { CODEX_HOME="$HOME/.codex-cx2" command codex "$@"; }
 PowerShell and the persistence notes in the Claude document apply unchanged;
 substitute `CODEX_HOME` for `CLAUDE_CONFIG_DIR`.
 
+If you use Herdr, run `agb herdr install --target cx2` after configuring the
+account in agb. This adds its native session integration and saves resume
+commands with the correct `CODEX_HOME`. Restart the agent and review Codex's
+hook trust prompt if it appears. See [Herdr conversation restore](herdr.md#restore-conversations-after-a-restart)
+for setup on all accounts, verification and recovery.
+
 ## 2. Authenticate each account
 
 ```bash
@@ -71,8 +77,9 @@ become picker badges such as `[CX1]` and `[CX2]`.
 
 ## 4. Use the picker
 
-Controls are the same as for Claude accounts. `Ctrl+T` and `Shift+Tab` cycle one
-target list covering OpenCode, every Claude account and every Codex account, and
+Controls are the same as for Claude accounts. `Ctrl+T` lists OpenCode, every
+Claude account and every Codex account with their limits and opens the selection
+in the one you choose; `Shift+Tab` cycles the same list as a pinned target, and
 `Enter` follows whatever route the badge shows.
 
 ```bash

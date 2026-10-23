@@ -7,10 +7,12 @@ it; `asciinema play <file>.cast` replays one in your terminal.
 
 ## The picker
 
-![agb filtering OpenCode, Claude Code and Codex sessions in one list, then routing a Claude session into Codex](demo.gif)
+![agb listing OpenCode, Claude Code and Codex sessions together, finding two by a word typed in their prompts, then opening a Claude session in the suggested Codex account](demo.gif)
 
-One list across OpenCode, Claude Code and Codex, filtered by what you typed,
-then a Claude session handed to Codex.
+One list across OpenCode, Claude Code and Codex, filtered by a word from your
+prompts. `Ctrl+T` then shows every account's limits, and the Claude session,
+whose account is nearly out of its 5h window, opens in the suggested Codex
+account as a transcript-seeded fork.
 Recording: [`demo.cast`](demo.cast) · More: [AgentBridge](../README.md)
 
 ## Right-click actions and new conversations

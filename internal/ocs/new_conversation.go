@@ -24,6 +24,10 @@ type newConversation struct {
 	target       int
 	err          string
 	yolo         *bool
+	// Set when the dialog opens this conversation in another account (Ctrl+T)
+	// instead of starting a blank one: it keeps its directory, so there is no
+	// directory to choose.
+	session *Session
 	// Screen rows of the first suggestion and the first account, for clicks;
 	// 0 when not drawn. dirOffset is the first suggestion shown.
 	dirRow, dirOffset, dirShown, accountRow int
@@ -37,13 +41,26 @@ func (p *picker) openNew(directory string) {
 	if target < 0 {
 		target = 0
 	}
-	dialog := &newConversation{directory: directory, target: target, yolo: p.yolo, choice: -1, projects: p.recentProjects()}
+	dialog := &newConversation{directory: ShortenHome(directory), target: target, yolo: p.yolo, choice: -1, projects: p.recentProjects()}
 	for i, project := range dialog.dirSuggestions() {
 		if project.path == filepath.Clean(directory) {
 			dialog.choice = i
 		}
 	}
 	p.newConversation = dialog
+	p.refreshStaleUsage()
+}
+
+// openIn is the same dialog for choosing where the selected conversation
+// goes, with the limits beside every account instead of cycling blind.
+func (p *picker) openIn() {
+	selected := p.selected()
+	if selected == nil {
+		return
+	}
+	session := *selected
+	target := max(0, p.indexOfTarget(p.currentTarget()))
+	p.newConversation = &newConversation{session: &session, target: target, yolo: p.yolo, choice: -1}
 	p.refreshStaleUsage()
 }
 
@@ -102,6 +119,9 @@ func (p *picker) newTarget() *Account {
 
 func (p *picker) handleNew(key Key) (*PickResult, error) {
 	dialog := p.newConversation
+	if dialog.session != nil {
+		return p.handleOpenIn(key)
+	}
 	switch {
 	case key.Ctrl && key.Name == "c":
 		return nil, ErrCancelled
@@ -164,6 +184,45 @@ func (p *picker) handleNew(key Key) (*PickResult, error) {
 	return nil, nil
 }
 
+func (p *picker) handleOpenIn(key Key) (*PickResult, error) {
+	dialog := p.newConversation
+	switch {
+	case key.Ctrl && key.Name == "c":
+		return nil, ErrCancelled
+	case key.Name == "escape":
+		p.newConversation = nil
+	case key.Name == "enter", key.Ctrl && key.Name == "f":
+		target := p.newTarget()
+		if target == nil {
+			dialog.err = "Configure an agent account first"
+			return nil, nil
+		}
+		mode := ModeResume
+		if key.Name == "f" {
+			mode = ModeFork
+		}
+		result := p.finish(*dialog.session, target, mode)
+		result.SkipPermissions = dialog.yolo
+		return &result, nil
+	case key.Name == "tab", key.Name == "right", key.Ctrl && key.Name == "t":
+		dialog.target = NextTarget(len(p.targets), dialog.target, 1)
+	case key.Name == "backtab", key.Name == "left":
+		dialog.target = NextTarget(len(p.targets), dialog.target, -1)
+	case key.Name == "up":
+		dialog.target = clampIndex(dialog.target-1, len(p.targets))
+	case key.Name == "down":
+		dialog.target = clampIndex(dialog.target+1, len(p.targets))
+	case key.Ctrl && key.Name == "g":
+		if suggested := p.indexOfTarget(p.recommendedTarget()); suggested >= 0 {
+			dialog.target = suggested
+		}
+	case key.Ctrl && key.Name == "y":
+		value := !p.newYoloFor(p.newTarget())
+		dialog.yolo = &value
+	}
+	return nil, nil
+}
+
 // clickNew handles a click in the dialog's suggestions or accounts.
 func (p *picker) clickNew(y int) bool {
 	dialog := p.newConversation
@@ -183,6 +242,10 @@ func (p *picker) clickNew(y int) bool {
 
 func (p *picker) drawNew(lines []string, width, bodyRows int) {
 	dialog := p.newConversation
+	if dialog.session != nil {
+		p.drawOpenIn(lines, width, bodyRows)
+		return
+	}
 	inner := width - 4
 	target := p.newTarget()
 	label := "No configured accounts"
@@ -236,6 +299,48 @@ func (p *picker) drawNew(lines []string, width, bodyRows int) {
 	}
 	body = append(body, "", dim(truncatePlain("type or ↑↓ for the directory · tab / ←→ / click for the account · ^g suggested · ^u clear · ^y yolo", inner)))
 	box := boxed("New conversation", body, width, bodyRows)
+	for i := 0; i < bodyRows; i++ {
+		lines[i+2] = box[i]
+	}
+}
+
+func (p *picker) drawOpenIn(lines []string, width, bodyRows int) {
+	dialog := p.newConversation
+	session := dialog.session
+	inner := width - 4
+	target := p.newTarget()
+	label := "No configured accounts"
+	route := ""
+	if target != nil {
+		label = destinationName(target)
+		if !IsNativeTarget(session, target) {
+			route = " · seeded from " + sessionLabel(session)
+		}
+	}
+	permissions := "asks for permissions"
+	if p.newYoloFor(target) {
+		permissions = "YOLO: bypasses permission checks"
+	}
+	body := []string{
+		bold(truncatePlain(label, inner/2)) + dim(truncatePlain(route+" · "+permissions, inner/2)),
+		dim(truncatePlain(ShortenHome(session.Directory), inner)),
+	}
+	if dialog.err != "" {
+		body = append(body, red(truncatePlain(dialog.err, inner)))
+	}
+	dialog.dirRow, dialog.accountRow = 0, 0
+	if len(p.targets) > 0 {
+		header, rows := p.limitRows(dialog.target, inner)
+		body = append(body, "", header)
+		dialog.accountRow = 4 + len(body)
+		body = append(body, rows...)
+	}
+	body = append(body, "", dim(truncatePlain("↑↓ / tab / click for the account · enter resume · ^f fork · ^g suggested · ^y yolo", inner)))
+	title := "Open in…"
+	if name := strings.TrimSpace(session.Title); name != "" {
+		title = "Open “" + truncatePlain(name, max(1, width/2)) + "” in…"
+	}
+	box := boxed(title, body, width, bodyRows)
 	for i := 0; i < bodyRows; i++ {
 		lines[i+2] = box[i]
 	}

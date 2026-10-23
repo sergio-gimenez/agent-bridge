@@ -15,11 +15,11 @@ Up/Down selects a conversation; PgUp/PgDn moves ten rows, and Home/End jumps to 
 
 Resuming, routing and forks
 
-Enter resumes the selected conversation in its own account until you pin a target. Ctrl+T cycles accounts forward; Shift+Tab cycles backward. The header shows the pinned target and an arrow on a row means Enter will carry that conversation there. agb --target cx2 starts with that target pinned.
+Enter resumes the selected conversation in its own account until you pin a target. Ctrl+T opens the same account list as Ctrl+N for the selection, with every account's limits: Up/Down, Tab, Left/Right or a click choose the account, Ctrl+G picks the suggested one, Enter resumes there and Ctrl+F forks there. Esc returns without changing anything. Shift+Tab cycles a pinned target backward without the dialog. The header shows the pinned target and an arrow on a row means Enter will carry that conversation there. agb --target cx2 starts with that target pinned.
 
 Ctrl+F branches the displayed route into a new conversation. Within the same tool and account this uses a native fork where supported; OpenCode 2 uses a transcript seed instead. Opening in another tool or account always starts a new conversation with the old transcript as context. The original stays available. Continue from the newest branch when switching again.
 
-Tab immediately opens the selection in the next tool as a seeded fork. It launches the conversation; use Ctrl+T to choose a destination before opening instead.
+Tab immediately opens the selection in the next tool as a seeded fork. It launches the conversation; use Ctrl+T to choose the destination with its limits in view instead.
 
 The seed preserves the opening request, latest user message, recent turns and a readable saved summary when available. Long histories also save a full extracted transcript under ~/.cache/agentbridge/handoffs/ so the destination agent can recover omitted details. Keep those files while conversations still refer to them.
 
@@ -53,13 +53,17 @@ agb setup --example prints a starter setup block to merge into your config. Edit
 
 agb sync --check reports drift without writing (exit 1 means changes exist). --dry-run previews changes and --json prints a machine-readable plan. Conflicts return exit 2. Conversation forks carry history; configure shared memory separately when you need tools to share saved project knowledge.
 
+Restoring conversations in Herdr
+
+Run agb herdr install --dry-run, then agb herdr install to install native session hooks and account-aware resume commands for every configured Claude and Codex account. --target NAME limits installation to one account. This needs Herdr 0.9.3 or later. Start agents again to load the hooks; resume existing conversations in their original accounts through agb. Keep the Herdr server running during setup. Codex may ask you to review and trust the hooks. agb herdr uninstall removes only agb's hooks. See docs/herdr.md for verification and recovery.
+
 Layout and troubleshooting
 
 Ctrl+Left/Right resizes the list and detail card; agb remembers the split. The card hides below 90 terminal columns. If your desktop intercepts those keys, change its keyboard shortcuts or click the resize hint when visible.
 
 Missing conversations: check account paths and run agb --rescan to rebuild the index. Missing stores are skipped. Archived conversations don't appear. agb --print lists the 25 newest sessions; --print --json lists up to 200 with their IDs and open status. agb open accepts a full ID or a unique prefix.
 
-Set AGB_DRY_RUN=1 to inspect an agent launch without starting it. Dry runs of seeded forks still prepare handoff files. For command-specific options run agb COMMAND --help.
+Set AGB_DRY_RUN=1 to inspect an agent launch without starting it. Dry runs of seeded forks still prepare handoff files. For command-specific options run agb COMMAND --help. The optional Headroom experiment commands have their own flags: agb experiment run --help, report --help and outcome --help.
 
 F1 opens this guide from any picker dialog. ? opens it when the search is empty. Up/Down, PgUp/PgDn, Home/End and the wheel scroll help; Esc, F1 or ? closes it and restores your previous view. Ctrl+C quits the picker.
 `

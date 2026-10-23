@@ -53,6 +53,9 @@ if [ "$scenario" = pull ]; then
   trap 'pkill -P $open_pid 2>/dev/null; kill $open_pid 2>/dev/null || true' EXIT
 fi
 
+# The demo starts in a fixture project, so a new conversation defaults to it
+# rather than to this repository.
+cd "$HOME/code/nebula-api"
 bash "$keys" | asciinema rec \
   --overwrite --quiet \
   --cols 120 --rows 32 \

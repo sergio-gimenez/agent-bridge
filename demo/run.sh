@@ -26,4 +26,6 @@ export AGB_MACHINE_NAME=laptop
 export GIT_CEILING_DIRECTORIES="$here/.fixture"
 export PATH="$HOME/.local/bin:$PATH"
 
+# Start in a fixture project, as the recordings do.
+cd "$HOME/code/nebula-api"
 exec "$root/bin/agb" "$@"

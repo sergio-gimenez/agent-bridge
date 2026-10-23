@@ -18,11 +18,14 @@ nav = [
   { "Home" = "index.md" },
   { "Demos" = "demos.md" },
   { "Guides" = [
+    { "Forks and handoffs" = "forking.md" },
     { "Push and pull" = "push-pull.md" },
     { "Switching agents in Herdr" = "herdr.md" },
     { "Share skills and MCPs" = "setup.md" },
     { "Multiple Claude Code accounts" = "multiple-claude-accounts.md" },
     { "Multiple Codex accounts" = "multiple-codex-accounts.md" },
+    { "Memory and diagrams across tools" = "integrations.md" },
+    { "Configuration and internals" = "reference.md" },
   ] },
   { "Design" = [
     { "Shared agent setup" = "shared-agent-setup.md" },

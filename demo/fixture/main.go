@@ -12,6 +12,7 @@
 //	.codex-cx1/sessions/...             Codex account "cx1"
 //	.codex-cx2/sessions/...             Codex account "cx2"
 //	.config/agentbridge/config.json     AgentBridge config naming every account
+//	.cache/agentbridge/limits.json      invented subscription limits
 //
 // Entries with "machine": "desk" go to a second home, demo/.fixture/desk, which
 // stands in for another machine: the demos browse it (Ctrl+R), pull from it and
@@ -301,6 +302,36 @@ esac`)
 	for _, a := range deskCodex {
 		writeFile(filepath.Join(a.CodexHome, "auth.json"), "{}\n", time.Time{})
 	}
+
+	// Invented subscription headroom, so the header, the cards and the Ctrl+N
+	// chooser show limit bars and a suggestion instead of "unknown". It counts
+	// as fresh for two minutes after the build, so the picker does not probe the
+	// fixture accounts during a recording.
+	resets := func(d time.Duration) string { return now.Add(d).UTC().Format(time.RFC3339) }
+	windows := func(fiveHour, sevenDay float64, fiveHourReset, sevenDayReset time.Duration) []obj {
+		return []obj{
+			{"name": "5h", "usedPercent": fiveHour, "resetsAt": resets(fiveHourReset), "durationMinutes": 300},
+			{"name": "7d", "usedPercent": sevenDay, "resetsAt": resets(sevenDayReset), "durationMinutes": 7 * 24 * 60},
+		}
+	}
+	observed := now.UTC().Format(time.RFC3339)
+	limits, err := json.Marshal(obj{
+		"version":     1,
+		"generatedAt": observed,
+		"accounts": []obj{
+			{"target": "oc", "source": "opencode", "status": "unknown", "detail": "provider does not expose subscription limits"},
+			{"target": "cc1", "source": "claude", "status": "available", "plan": "max", "observedAt": observed,
+				"windows": windows(87, 61, 47*time.Minute, 3*24*time.Hour)},
+			{"target": "cc2", "source": "claude", "status": "available", "plan": "pro", "observedAt": observed,
+				"windows": windows(34, 48, 3*time.Hour+12*time.Minute, 5*24*time.Hour)},
+			{"target": "cx1", "source": "codex", "status": "available", "plan": "plus", "observedAt": observed,
+				"windows": windows(12, 22, 4*time.Hour+5*time.Minute, 6*24*time.Hour)},
+			{"target": "cx2", "source": "codex", "status": "blocked", "plan": "plus", "observedAt": observed,
+				"windows": windows(100, 74, 26*time.Minute, 2*24*time.Hour)},
+		},
+	})
+	must(err)
+	writeFile(filepath.Join(home, ".cache", "agentbridge", "limits.json"), string(limits)+"\n", time.Time{})
 
 	var counts []string
 	for _, tool := range []string{"opencode", "cc1", "cc2", "cx1", "cx2"} {

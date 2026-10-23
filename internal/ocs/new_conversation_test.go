@@ -170,6 +170,20 @@ func TestNewConversationSuggestsRecentProjects(t *testing.T) {
 	}
 }
 
+func TestNewConversationShowsTheStartingDirectoryUnderHome(t *testing.T) {
+	p, root := projectsPicker(t)
+	t.Setenv("HOME", root)
+	p.openNew(filepath.Join(root, "beta"))
+	dialog := p.newConversation
+	if dialog.directory != "~/beta" || dialog.choice != 1 {
+		t.Fatalf("directory %q, choice %d; want ~/beta highlighted", dialog.directory, dialog.choice)
+	}
+	result := press(t, p, enter)
+	if result == nil || result.Session.Directory != filepath.Join(root, "beta") {
+		t.Fatalf("shortened directory not expanded on start: %+v", result)
+	}
+}
+
 func TestNewConversationFiltersAndCompletesDirectories(t *testing.T) {
 	p, root := projectsPicker(t)
 	p.openNew(root)
@@ -197,5 +211,48 @@ func TestNewConversationFiltersAndCompletesDirectories(t *testing.T) {
 	press(t, p, Key{Name: "down"}, Key{Text: "/"})
 	if dialog.directory != ShortenHome(filepath.Join(root, "beta"))+"/" {
 		t.Fatalf("typing after a choice did not continue from it: %q", dialog.directory)
+	}
+}
+
+func TestCtrlTOpensTheSelectionInAnAccount(t *testing.T) {
+	p := limitsPicker()
+	p.active = 2
+	selected := *p.selected()
+	press(t, p, Key{Name: "t", Ctrl: true})
+	dialog := p.newConversation
+	if dialog == nil || dialog.session == nil || dialog.session.ID != selected.ID {
+		t.Fatal("Ctrl+T did not open the account dialog for the selection")
+	}
+	if got := p.newTarget(); got == nil || !IsNativeTarget(&selected, got) {
+		t.Fatalf("dialog starts on %+v, not where the selection lives", got)
+	}
+	frame := plain(p.frame(140, 30))
+	for _, want := range []string{"Open “", "48%", "★ suggested", "enter resume", "^f fork"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("dialog lacks %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "Directory ") {
+		t.Errorf("open-in dialog asks for a directory:\n%s", frame)
+	}
+
+	// Typing does nothing here; Esc leaves the list as it was.
+	press(t, p, Key{Text: "x"}, Key{Name: "down"}, Key{Name: "escape"})
+	if p.newConversation != nil || p.query != "" || p.pinned >= 0 || p.active != 2 {
+		t.Fatal("Esc changed the picker")
+	}
+
+	press(t, p, Key{Name: "t", Ctrl: true}, Key{Name: "g", Ctrl: true})
+	result := press(t, p, enter)
+	if result == nil || result.Mode != ModeResume || result.Target.Name != "cx1" || result.Session.ID != selected.ID {
+		t.Fatalf("Enter after Ctrl+G: %+v", result)
+	}
+
+	press(t, p, Key{Name: "t", Ctrl: true})
+	p.frame(140, 30)
+	clickMouse(t, p, 5, p.newConversation.accountRow+1)
+	result = press(t, p, Key{Name: "f", Ctrl: true})
+	if result == nil || result.Mode != ModeFork || result.Target.Name != "cc1" {
+		t.Fatalf("Ctrl+F after clicking CC1: %+v", result)
 	}
 }

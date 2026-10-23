@@ -148,8 +148,8 @@ Picker controls:
 | --- | --- |
 | `Enter` | Follow the displayed route |
 | `Ctrl+F` | Fork the displayed route into a new session |
-| `Ctrl+T` | Cycle the target forwards, across every tool and account |
-| `Shift+Tab` | Cycle the target backwards |
+| `Ctrl+T` | Choose the account to open the selection in, with each account's limits |
+| `Shift+Tab` | Cycle the pinned target backwards, across every tool and account |
 | `Tab` | Open in the next tool as a transcript-seeded session |
 
 Badges preview the selected route. Until the target is cycled it follows the
@@ -260,11 +260,17 @@ has memory is merged into the store first (see [setup.md](setup.md)).
 Anything that installs itself into a Claude config dir does so for one account
 at a time: hooks in `settings.json`, status lines, plugins, and tools that read
 transcripts from `projects/`. Install them again with the new account's
-`CLAUDE_CONFIG_DIR`, for example a terminal multiplexer's session hook:
+`CLAUDE_CONFIG_DIR`. For Herdr, use agb's account-aware restore installer after
+adding the account to agb's configuration:
 
 ```bash
-CLAUDE_CONFIG_DIR=~/.claude-cc3 herdr integration install claude
+agb herdr install --target cc3
 ```
+
+This installs Herdr's native session hook and agb's account-aware resume hook.
+The native hook alone records an ID but can restore it through the default
+account. See [restoring conversations in Herdr](herdr.md#restore-conversations-after-a-restart)
+for verification, recovery and removal. Install on each machine running agents.
 
 A transcript viewer that only knows `~/.claude/projects` needs
 `~/.claude-cc3/projects` added to its list of roots.

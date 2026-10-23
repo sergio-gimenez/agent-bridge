@@ -110,6 +110,17 @@ func launch(command string, args []string, directory string, env []envOverride) 
 	if err := os.Chdir(directory); err != nil {
 		return 1, err
 	}
+	// Session hooks inherit this marker, including after Herdr restores the
+	// native command. Only agb's explicit permission choice is carried over.
+	if os.Getenv("HERDR_ENV") == "1" && (command == "claude" || command == "codex") {
+		mode := command + ":safe"
+		for _, arg := range args {
+			if arg == "--dangerously-skip-permissions" || arg == "--dangerously-bypass-approvals-and-sandbox" {
+				mode = command + ":dangerous"
+			}
+		}
+		env = append(env, envOverride{"AGB_HERDR_LAUNCH_MODE", mode})
+	}
 	err = syscall.Exec(binary, append([]string{command}, args...), childEnvironment(env))
 	return 1, fmt.Errorf("could not start %s: %w", command, err)
 }

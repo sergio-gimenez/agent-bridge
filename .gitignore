@@ -1,4 +1,5 @@
 bin/
+.headroom-pilot/
 
 # Generated demo fixture home (rebuild with `make demo-fixture`).
 demo/.fixture/

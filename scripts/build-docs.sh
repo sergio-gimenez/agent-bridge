@@ -24,7 +24,7 @@ stage() {
   # README links point into docs/ or at repo files the site does not carry.
   sed -E \
     -e 's#(\]\(|src="|href=")docs/#\1#g' \
-    -e "s#(\\]\\(|href=\")(demo/|LICENSE|CONTRIBUTING\\.md)#\\1${REPO_BLOB}/\\2#g" \
+    -e "s#(\\]\\(|href=\")(demo/|LICENSE|CONTRIBUTING\\.md|CHANGELOG\\.md)#\\1${REPO_BLOB}/\\2#g" \
     README.md >"${STAGE}/index.md"
 
   # Pages under docs/ reach the README as ../README.md and other repo files as ../X.
