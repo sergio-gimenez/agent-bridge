@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://github.com/sergio-gimenez/agent-bridge/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/sergio-gimenez/agent-bridge/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="Go >=1.23" src="https://img.shields.io/badge/go-%3E%3D1.23-00ADD8.svg">
+  <img alt="Go 1.23 or later" src="https://img.shields.io/badge/go-1.23%2B-00ADD8.svg">
   <img alt="Single static binary" src="https://img.shields.io/badge/binary-static-lightgrey.svg">
   <a href="https://agentbridge.sergiogimenez.com/"><img alt="Docs" src="https://img.shields.io/badge/docs-agentbridge.sergiogimenez.com-526cfe.svg"></a>
 </p>
