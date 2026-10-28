@@ -8,3 +8,6 @@ demo/.fixture/
 .venv-docs/
 .site-src/
 site/
+
+# GoReleaser output (`goreleaser release --snapshot --clean`).
+dist/

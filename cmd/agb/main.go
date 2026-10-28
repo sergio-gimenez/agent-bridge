@@ -7,11 +7,26 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"syscall"
 
 	"github.com/sergio-gimenez/opencode-sessions/internal/ocs"
 )
+
+// Set by the release build (-ldflags "-X main.version=v2.0.0"). A plain
+// `go build` leaves it empty and falls back to what the toolchain recorded.
+var version string
+
+func versionString() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
 
 func resolveTarget(config ocs.Config, requested string) (*ocs.Account, error) {
 	if requested == "" {
@@ -39,6 +54,9 @@ func run() (int, error) {
 			return ocs.RunHerdrCommand(os.Args[2:], os.Stdin, os.Stdout)
 		case "help":
 			ocs.PrintGuide(os.Stdout)
+			return 0, nil
+		case "version", "--version", "-V":
+			fmt.Println("agb", versionString())
 			return 0, nil
 		case "experiment":
 			return ocs.RunExperimentCommand(os.Args[2:], os.Stdout)

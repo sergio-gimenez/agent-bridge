@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-28
+
 ### Changed
 
 - **A new README and demo.** The README leads with the logo, a feature
@@ -53,6 +55,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Releases.** Tagging `vX.Y.Z` builds static Linux and macOS binaries (amd64
+  and arm64) with GoReleaser and publishes them with this changelog's section as
+  the notes. `curl -fsSL https://agentbridge.sergiogimenez.com/install.sh | sh`
+  installs the latest one into `~/.local/bin` after checking its checksum, and
+  `agb version` prints what is installed.
 - **A fuller new conversation dialog.** `Ctrl+N` suggests the directories you
   have sessions in, newest first (`↑`/`↓` or a click); typing filters them, and
   a typed path lists the subdirectories it completes to. Every account shows a
@@ -241,5 +248,5 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `--print` to list recent sessions without opening the picker.
 - `npm run install:local` to install `ocs` into `~/.local/bin` without root.
 
-[Unreleased]: https://github.com/sergio-gimenez/opencode-sessions/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/sergio-gimenez/opencode-sessions/releases/tag/v1.0.0
+[Unreleased]: https://github.com/sergio-gimenez/agent-bridge/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/sergio-gimenez/agent-bridge/releases/tag/v2.0.0

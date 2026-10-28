@@ -15,7 +15,7 @@ agb herdr install
 ```
 
 This needs Herdr 0.9.3 or later, `bash`, `python3`, and an installed agb binary.
-Run `make install` before installing the hooks; they call that binary by its
+[Install agb](../README.md#install) before installing the hooks; they call that binary by its
 absolute path. The installer covers the Claude and Codex accounts in your agb
 configuration. Each account's config directory must already exist. To install
 for just one account, use `agb herdr install --target cc2`. `--config PATH`

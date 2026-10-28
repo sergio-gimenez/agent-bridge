@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/sergio-gimenez/agent-bridge/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/sergio-gimenez/agent-bridge?color=526cfe"></a>
   <a href="https://github.com/sergio-gimenez/agent-bridge/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/sergio-gimenez/agent-bridge/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Go 1.23 or later" src="https://img.shields.io/badge/go-1.23%2B-00ADD8.svg">
@@ -89,14 +90,23 @@ flowchart LR
 
 ## Install
 
-Needs Go 1.23+ to build, and at least one of OpenCode, Claude Code and Codex.
-The result is a single static binary.
+```bash
+curl -fsSL https://agentbridge.sergiogimenez.com/install.sh | sh
+```
+
+This puts a single static `agb` binary in `~/.local/bin`, with no root needed,
+on Linux or macOS (amd64 or arm64). You also need at least one of OpenCode,
+Claude Code and Codex. The script checks the download against the release's
+checksums, and you can [read it](scripts/install.sh) first. Pin a release with
+`| AGB_VERSION=v2.0.0 sh`, or grab an archive from the
+[releases page](https://github.com/sergio-gimenez/agent-bridge/releases).
+Run `agb version` to see what you have; rerun the script to update.
+
+To build from source instead, with Go 1.23+:
 
 ```bash
 git clone https://github.com/sergio-gimenez/agent-bridge.git
-cd agent-bridge
-make install              # puts `agb` in ~/.local/bin, no root needed
-agb
+cd agent-bridge && make install
 ```
 
 `agb` finds each tool's default store on its own. To add a second Claude or
@@ -106,7 +116,7 @@ and [multiple Codex accounts](docs/multiple-codex-accounts.md).
 Coming from `opencode-sessions` or `ocs`? Configuration and cache now live in
 `~/.config/agentbridge` and `~/.cache/agentbridge`, and environment overrides
 use `AGB_*`. Move any existing configuration or cache there before removing the
-older installation; `make install` removes the obsolete command aliases.
+older installation; both installers remove the obsolete command aliases.
 
 ## Try it on demo data
 
@@ -331,6 +341,11 @@ make demo-record DEMO=push  # re-record a demo (DEMO= empty, push, pull or actio
 make docs-serve             # preview the documentation site
 make vet test build
 ```
+
+To cut a release, move the `[Unreleased]` entries in `CHANGELOG.md` under a new
+version heading, merge that, then tag and push it (`git tag v2.0.0 && git push
+origin v2.0.0`). The release workflow builds the archives with GoReleaser and
+publishes that version's changelog section as the release notes.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 

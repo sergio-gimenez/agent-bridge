@@ -102,6 +102,7 @@ func PrintHelp(out io.Writer) {
 		"",
 		"Usage:",
 		"  agb help              read the built-in guide and command reference",
+		"  agb version           print the installed version",
 		"  agb",
 		"  agb --print",
 		"  agb --query \"mesh vpn\"",

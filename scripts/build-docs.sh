@@ -24,7 +24,7 @@ stage() {
   # README links point into docs/ or at repo files the site does not carry.
   sed -E \
     -e 's#(\]\(|src="|href=")docs/#\1#g' \
-    -e "s#(\\]\\(|href=\")(demo/|LICENSE|CONTRIBUTING\\.md|CHANGELOG\\.md)#\\1${REPO_BLOB}/\\2#g" \
+    -e "s#(\\]\\(|href=\")(demo/|scripts/|LICENSE|CONTRIBUTING\\.md|CHANGELOG\\.md)#\\1${REPO_BLOB}/\\2#g" \
     README.md >"${STAGE}/index.md"
 
   # Pages under docs/ reach the README as ../README.md and other repo files as ../X.
@@ -36,6 +36,8 @@ stage() {
       "${page}"
     rm -f "${page}.bak"
   done
+  # Served as /install.sh, so the one-line install in the README has a short URL.
+  cp scripts/install.sh "${STAGE}/install.sh"
   touch "${STAGE}/.staged"
 }
 

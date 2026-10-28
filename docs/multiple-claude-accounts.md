@@ -8,13 +8,7 @@ all accounts can work in the same project directories.
 
 - Two or more Claude subscriptions, each using a different Claude account
 - Claude Code installed and available as `claude`
-- `agb` installed from this repository
-
-Install `agb` locally when needed:
-
-```bash
-make install
-```
+- `agb` installed (see [Install](../README.md#install))
 
 ## How isolation works
 

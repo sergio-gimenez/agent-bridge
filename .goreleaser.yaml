@@ -1,0 +1,40 @@
+# Release builds, run by .github/workflows/release.yml when a v* tag is pushed.
+# Try it locally without publishing: goreleaser release --snapshot --clean
+version: 2
+
+project_name: agb
+
+builds:
+  - main: ./cmd/agb
+    binary: agb
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    # The picker drives the terminal through Unix syscalls, so no Windows.
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+
+archives:
+  # No version in the name, so releases/latest/download/<name> always works
+  # and scripts/install.sh needs no API call to find the newest release.
+  - name_template: "agb_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+# Release notes come from CHANGELOG.md (see the workflow), not the git log.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: sergio-gimenez
+    name: agent-bridge
