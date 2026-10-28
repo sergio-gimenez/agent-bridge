@@ -30,9 +30,8 @@ archives:
 checksum:
   name_template: checksums.txt
 
-# Release notes come from CHANGELOG.md (see the workflow), not the git log.
-changelog:
-  disable: true
+# The workflow passes the CHANGELOG.md section as --release-notes, which
+# replaces the generated changelog. Disabling the changelog would drop it too.
 
 release:
   github:
