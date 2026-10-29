@@ -27,6 +27,8 @@ Starting a blank conversation
 
 Ctrl+N opens the new conversation dialog, even with an empty session list. Below the directory it lists the projects you have sessions in, newest first: Up/Down or a click picks one, typing filters them, and a typed path (~/src/, /srv/) lists the subdirectories it could complete to. Ctrl+U clears the directory. Below that, every account has a bar per limit window, when its tightest window resets, and which one is suggested. Tab, Ctrl+T, Left/Right or a click choose the agent/account; Shift+Tab goes backward; Ctrl+G picks the suggested one. Enter starts. Esc returns to the picker. The default directory is where you ran agb.
 
+Ctrl+S in that dialog makes it a secret conversation: OpenCode in a throwaway store in RAM, without plugins or MCPs, deleted when OpenCode exits. The account list becomes a list of models: LOCAL ones run on this machine or your private network, ZDR ones are OpenCode Go models its privacy table lists with zero retention. Only those can be picked; the others are listed under Not offered with the reason. Tab, Left/Right or a click choose the model. A blank directory starts in a scratch directory with no project. Ctrl+S again turns it off. agb new --secret [--model ID] does the same from a shell, and secret.models in the config vouches for or rules out a model or provider/*. See docs/secret.md.
+
 Ctrl+E or right-click opens actions for the selected conversation, including starting a blank conversation in its project. Use Up/Down and Enter to choose an action, or click it. Esc closes the menu.
 
 Accounts, limits and permissions

@@ -31,6 +31,15 @@ type newConversation struct {
 	// Screen rows of the first suggestion and the first account, for clicks;
 	// 0 when not drawn. dirOffset is the first suggestion shown.
 	dirRow, dirOffset, dirShown, accountRow int
+	// Ctrl+S: a secret conversation, in OpenCode on one of the pickable
+	// models (model indexes them; -1 when there is none).
+	secret      bool
+	models      []SecretModel
+	model       int
+	modelOffset int
+	modelShown  int
+	// The directory before secret mode cleared it, back when it is off.
+	directoryBefore string
 }
 
 func (p *picker) openNew(directory string) {
@@ -110,6 +119,83 @@ func (p *picker) newYoloFor(target *Account) bool {
 	return p.yoloFor(target)
 }
 
+// pickableModels is the head of the list: SecretModels sorts the models a
+// secret conversation may use first.
+func (dialog *newConversation) pickableModels() []SecretModel {
+	count := 0
+	for count < len(dialog.models) && dialog.models[count].Tier.Pickable() {
+		count++
+	}
+	return dialog.models[:count]
+}
+
+func (p *picker) toggleSecret() {
+	dialog := p.newConversation
+	dialog.err = ""
+	if dialog.secret {
+		dialog.secret = false
+		dialog.typed(dialog.directoryBefore)
+		return
+	}
+	if dialog.models == nil {
+		dialog.models = SecretModels(p.options.Config, p.now())
+	}
+	dialog.secret, dialog.model = true, -1
+	pickable := dialog.pickableModels()
+	for i, model := range pickable {
+		if model.ID == p.options.Config.Secret.Default {
+			dialog.model = i
+		}
+	}
+	if dialog.model < 0 && len(pickable) > 0 {
+		dialog.model = 0
+	}
+	// A secret conversation is usually not about a project: blank starts it
+	// in a scratch directory.
+	dialog.directoryBefore = dialog.directory
+	dialog.typed("")
+}
+
+func (dialog *newConversation) cycleModel(step int) {
+	if count := len(dialog.pickableModels()); count > 0 {
+		dialog.model = NextTarget(count, dialog.model, step)
+	}
+}
+
+func (p *picker) finishSecret() (*PickResult, error) {
+	dialog := p.newConversation
+	pickable := dialog.pickableModels()
+	if dialog.model < 0 || dialog.model >= len(pickable) {
+		dialog.err = "No model is private enough: add a local provider or sign in to OpenCode Go"
+		return nil, nil
+	}
+	directory := ""
+	if strings.TrimSpace(dialog.directory) != "" {
+		var err error
+		directory, err = filepath.Abs(expandHome(dialog.directory))
+		if err == nil {
+			if info, statErr := os.Stat(directory); statErr != nil || !info.IsDir() {
+				err = fmt.Errorf("Directory does not exist: %s", directory)
+			}
+		}
+		if err != nil {
+			dialog.err = err.Error()
+			return nil, nil
+		}
+	}
+	target := p.options.Config.Opencode
+	if target.Tool == "" {
+		target = OpencodeAccount
+	}
+	return &PickResult{
+		Session:         Session{Directory: directory, Source: SourceOpencode},
+		Target:          target,
+		Mode:            ModeNew,
+		SkipPermissions: dialog.yolo,
+		Secret:          pickable[dialog.model].ID,
+	}, nil
+}
+
 func (p *picker) newTarget() *Account {
 	if len(p.targets) == 0 {
 		return nil
@@ -127,6 +213,16 @@ func (p *picker) handleNew(key Key) (*PickResult, error) {
 		return nil, ErrCancelled
 	case key.Name == "escape":
 		p.newConversation = nil
+	case key.Ctrl && key.Name == "s":
+		p.toggleSecret()
+	case dialog.secret && key.Name == "enter":
+		return p.finishSecret()
+	case dialog.secret && (key.Name == "tab" || key.Name == "right" || key.Ctrl && key.Name == "t"):
+		dialog.cycleModel(1)
+	case dialog.secret && (key.Name == "backtab" || key.Name == "left"):
+		dialog.cycleModel(-1)
+	case dialog.secret && key.Ctrl && key.Name == "g":
+		// No suggested account: a secret conversation is always OpenCode.
 	case key.Name == "enter":
 		target := p.newTarget()
 		if target == nil {
@@ -232,7 +328,9 @@ func (p *picker) clickNew(y int) bool {
 		return false
 	case dialog.dirRow > 0 && y >= dialog.dirRow && y < dialog.dirRow+dialog.dirShown:
 		dialog.choose(dialog.dirOffset + y - dialog.dirRow)
-	case dialog.accountRow > 0 && y >= dialog.accountRow && y < dialog.accountRow+len(p.targets):
+	case dialog.secret && dialog.accountRow > 0 && y >= dialog.accountRow && y < dialog.accountRow+dialog.modelShown:
+		dialog.model = dialog.modelOffset + y - dialog.accountRow
+	case !dialog.secret && dialog.accountRow > 0 && y >= dialog.accountRow && y < dialog.accountRow+len(p.targets):
 		dialog.target = y - dialog.accountRow
 	default:
 		return false
@@ -244,6 +342,10 @@ func (p *picker) drawNew(lines []string, width, bodyRows int) {
 	dialog := p.newConversation
 	if dialog.session != nil {
 		p.drawOpenIn(lines, width, bodyRows)
+		return
+	}
+	if dialog.secret {
+		p.drawSecret(lines, width, bodyRows)
 		return
 	}
 	inner := width - 4
@@ -297,11 +399,137 @@ func (p *picker) drawNew(lines []string, width, bodyRows int) {
 		dialog.accountRow = 4 + len(body)
 		body = append(body, rows...)
 	}
-	body = append(body, "", dim(truncatePlain("type or ↑↓ for the directory · tab / ←→ / click for the account · ^g suggested · ^u clear · ^y yolo", inner)))
+	body = append(body, "", dim(truncatePlain("type or ↑↓ for the directory · tab / ←→ / click for the account · ^g suggested · ^u clear · ^y yolo · ^s secret", inner)))
 	box := boxed("New conversation", body, width, bodyRows)
 	for i := 0; i < bodyRows; i++ {
 		lines[i+2] = box[i]
 	}
+}
+
+// drawSecret is the dialog with Ctrl+S on: the directory, blank for none, and
+// the models a secret conversation may use, with the ones left out and why.
+func (p *picker) drawSecret(lines []string, width, bodyRows int) {
+	dialog := p.newConversation
+	inner := width - 4
+	permissions := "asks for permissions"
+	if p.newYoloFor(&OpencodeAccount) {
+		permissions = "YOLO: bypasses permission checks"
+	}
+	directory := dialog.directory + "▏"
+	if dialog.directory == "" {
+		directory += dim(" blank: a scratch directory, no project")
+	}
+	body := []string{
+		bold("OpenCode ") + magenta("SECRET") + dim(truncatePlain(" · "+permissions, max(1, inner-15))),
+		dim(truncatePlain("Nothing is kept: the store lives in RAM, without plugins or MCPs, and is deleted when OpenCode exits.", inner)),
+		"",
+		bold("Directory ") + truncatePlain(directory, max(1, inner-10)),
+	}
+	if dialog.err != "" {
+		body = append(body, red(truncatePlain(dialog.err, inner)))
+	}
+
+	pickable := dialog.pickableModels()
+	excluded := secretExclusions(dialog.models[len(pickable):], inner)
+	// Rows below the models: the blank line, what is left out, the blank
+	// line and the help.
+	below := 2 + len(excluded) + 2
+
+	suggestions := dialog.dirSuggestions()
+	dialog.dirShown = min(len(suggestions), clamp(bodyRows-2-len(body)-below-2-len(pickable), 2, 4))
+	if dialog.choice >= dialog.dirOffset+dialog.dirShown {
+		dialog.dirOffset = dialog.choice - dialog.dirShown + 1
+	}
+	dialog.dirOffset = clamp(min(dialog.dirOffset, dialog.choice), 0, max(0, len(suggestions)-dialog.dirShown))
+	dialog.dirRow = 4 + len(body)
+	if len(suggestions) == 0 {
+		dialog.dirRow = 0
+	}
+	for i := dialog.dirOffset; i < dialog.dirOffset+dialog.dirShown; i++ {
+		body = append(body, p.dirRow(suggestions[i], i == dialog.choice, inner))
+	}
+
+	header := "Model"
+	if policy := " OpenCode Go privacy table " + opencodeGoPolicyDate + " · " + opencodeGoPolicySource; inner > len(policy)+10 {
+		header = alignRight(bold(header), dim(policy), inner)
+	} else {
+		header = bold(header)
+	}
+	body = append(body, "", header)
+	dialog.accountRow = 4 + len(body)
+	dialog.modelShown = min(len(pickable), max(1, bodyRows-2-len(body)-below))
+	if dialog.model >= dialog.modelOffset+dialog.modelShown {
+		dialog.modelOffset = dialog.model - dialog.modelShown + 1
+	}
+	dialog.modelOffset = clamp(min(dialog.modelOffset, max(0, dialog.model)), 0, max(0, len(pickable)-dialog.modelShown))
+	if len(pickable) == 0 {
+		dialog.accountRow = 0
+		body = append(body, dim("  none: add a local provider to OpenCode, sign in to OpenCode Go, or vouch for one in agb's secret.models"))
+	}
+	for i := dialog.modelOffset; i < dialog.modelOffset+dialog.modelShown; i++ {
+		body = append(body, secretModelRow(pickable[i], i == dialog.model, inner))
+	}
+	if more := len(pickable) - dialog.modelOffset - dialog.modelShown; more > 0 {
+		body = append(body, dim(fmt.Sprintf("  … %d more", more)))
+	}
+	if len(excluded) > 0 {
+		body = append(body, "", dim("Not offered"))
+		body = append(body, excluded...)
+	}
+	body = append(body, "", dim(truncatePlain("type or ↑↓ for the directory · tab / ←→ / click for the model · ^u clear · ^y yolo · ^s secret off", inner)))
+	box := boxed("New secret conversation", body, width, bodyRows)
+	for i := 0; i < bodyRows; i++ {
+		lines[i+2] = box[i]
+	}
+}
+
+func secretModelRow(model SecretModel, chosen bool, inner int) string {
+	marker := "  "
+	if chosen {
+		marker = accent("▸ ")
+	}
+	label := cyan(fmt.Sprintf("%-5s", model.Tier.Label()))
+	if model.Tier == SecretLocal {
+		label = green(fmt.Sprintf("%-5s", model.Tier.Label()))
+	}
+	id := truncatePlain(model.ID, max(1, inner/2))
+	if chosen {
+		id = bold(id)
+	}
+	return alignRight(marker+label+" "+id, dim(truncatePlain(model.Note, max(1, inner/2-10))), inner)
+}
+
+// secretExclusions is one line per reason a model is left out, naming a whole
+// provider as provider/* when every model it has is left out for that reason.
+func secretExclusions(models []SecretModel, inner int) []string {
+	perProvider := map[string]int{}
+	for _, model := range models {
+		perProvider[model.Provider()]++
+	}
+	var reasons []string
+	byReason := map[string][]SecretModel{}
+	for _, model := range models {
+		reason := model.Tier.Label() + " " + model.Note
+		if _, ok := byReason[reason]; !ok {
+			reasons = append(reasons, reason)
+		}
+		byReason[reason] = append(byReason[reason], model)
+	}
+	var lines []string
+	for _, reason := range reasons {
+		group := byReason[reason]
+		var names []string
+		if provider := group[0].Provider(); len(group) == perProvider[provider] && len(group) > 1 {
+			names = []string{provider + "/*"}
+		} else {
+			for _, model := range group {
+				names = append(names, model.ID)
+			}
+		}
+		_, note, _ := strings.Cut(reason, " ")
+		lines = append(lines, "  "+dim(truncatePlain(note+": "+strings.Join(names, ", "), inner-2)))
+	}
+	return lines
 }
 
 func (p *picker) drawOpenIn(lines []string, width, bodyRows int) {

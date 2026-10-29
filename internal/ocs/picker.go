@@ -32,6 +32,8 @@ type PickResult struct {
 	SkipPermissions *bool
 	// The host the session was just pulled from, when it was.
 	PulledFrom string
+	// The model of a secret conversation (Ctrl+S); empty for any other.
+	Secret string
 }
 
 type PickOptions struct {
@@ -39,6 +41,8 @@ type PickOptions struct {
 	// opens the creation dialog immediately, including when no sessions exist.
 	WorkDirectory string
 	StartNew      bool
+	// StartSecret opens it with Ctrl+S already pressed.
+	StartSecret bool
 	// Every place a session can be opened, in cycling order.
 	Targets       []Account
 	InitialTarget *Account
@@ -403,6 +407,13 @@ func PickSession(sessions []Session, initialQuery string, options PickOptions) (
 	}
 	if options.StartNew {
 		p.openNew(p.options.WorkDirectory)
+		// Secret mode starts blank, unless a directory was asked for.
+		if options.StartSecret {
+			p.toggleSecret()
+			if options.WorkDirectory != "" {
+				p.newConversation.typed(ShortenHome(options.WorkDirectory))
+			}
+		}
 	}
 
 	in := int(os.Stdin.Fd())

@@ -25,6 +25,8 @@ type Config struct {
 	// Per host, a shell command agb push runs there once the session has
 	// arrived, e.g. to resume it in a herdr pane. See arriveCommand.
 	Arrive map[string]string
+	// Which models a secret conversation may use, beyond what agb decides.
+	Secret SecretConfig
 }
 
 // Each tool names its isolated home with its own environment variable, so each
@@ -201,6 +203,7 @@ func ParseConfig(raw []byte) (Config, error) {
 		DefaultCodexAccount:  pickDefault(codex, parsed["defaultCodexAccount"]),
 		MoveHosts:            moveHosts,
 		Arrive:               arrive,
+		Secret:               parseSecretConfig(parsed["secret"]),
 	}, nil
 }
 

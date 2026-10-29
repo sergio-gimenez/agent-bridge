@@ -20,6 +20,7 @@ nav = [
   { "Guides" = [
     { "Forks and handoffs" = "forking.md" },
     { "Push and pull" = "push-pull.md" },
+    { "Secret conversations" = "secret.md" },
     { "Switching agents in Herdr" = "herdr.md" },
     { "Share skills and MCPs" = "setup.md" },
     { "Multiple Claude Code accounts" = "multiple-claude-accounts.md" },

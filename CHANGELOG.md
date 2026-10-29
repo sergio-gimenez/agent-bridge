@@ -6,6 +6,16 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Secret conversations.** `Ctrl+S` in the new conversation dialog, or
+  `agb new --secret [--model ID]`, starts an OpenCode session whose store lives
+  in RAM, without plugins or MCPs, and is deleted when OpenCode exits. Only
+  models that keep nothing can be picked: local endpoints, and OpenCode Go
+  models listed with zero retention in its privacy table. The rest are shown
+  with the reason they are left out, and `secret.models` in the config
+  overrides the decision. See [secret conversations](docs/secret.md).
+
 ## [2.0.0] - 2026-10-28
 
 ### Changed

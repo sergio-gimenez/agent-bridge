@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/sergio-gimenez/opencode-sessions/internal/ocs"
 )
@@ -155,6 +156,9 @@ func run() (int, error) {
 	if picked.SkipPermissions != nil {
 		skip = *picked.SkipPermissions
 	}
+	if picked.Secret != "" {
+		return openSecret(config, picked.Session.Directory, picked.Secret, skip)
+	}
 	if picked.Mode == ocs.ModeNew {
 		return ocs.OpenNew(picked.Session.Directory, picked.Target, ocs.OpenOptions{SkipPermissions: skip})
 	}
@@ -172,6 +176,12 @@ func runNew(argv []string) (int, error) {
 	if args.Help {
 		ocs.PrintHelp(os.Stdout)
 		return 0, nil
+	}
+	if args.Secret {
+		config := ocs.LoadConfig()
+		return runNewSecret(config, directory, args, func(target ocs.Account) bool {
+			return config.DefaultSkipPermissions(args.SkipPermissions, target)
+		})
 	}
 	if directory == "" {
 		directory, err = os.Getwd()
@@ -199,6 +209,34 @@ func runNew(argv []string) (int, error) {
 		skip = *picked.SkipPermissions
 	}
 	return ocs.OpenNew(picked.Session.Directory, picked.Target, ocs.OpenOptions{SkipPermissions: skip})
+}
+
+// runNewSecret starts a secret conversation on --model, or opens the chooser
+// with Ctrl+S on to pick one. Without --dir it starts in a scratch directory,
+// not the current one: a secret conversation is usually not about a project.
+func runNewSecret(config ocs.Config, directory string, args ocs.Options, skipFor func(ocs.Account) bool) (int, error) {
+	skip := skipFor(config.Opencode)
+	if args.SecretModel != "" {
+		return openSecret(config, directory, args.SecretModel, skip)
+	}
+	picked, err := ocs.PickSession(nil, "", ocs.PickOptions{Targets: config.Targets(), StartNew: true, StartSecret: true,
+		WorkDirectory: directory, SkipPermissions: skipFor, Config: config})
+	if err != nil {
+		return 1, err
+	}
+	if picked.SkipPermissions != nil {
+		skip = *picked.SkipPermissions
+	}
+	return openSecret(config, picked.Session.Directory, picked.Secret, skip)
+}
+
+// openSecret checks the model again, whoever chose it, before starting.
+func openSecret(config ocs.Config, directory, id string, skip bool) (int, error) {
+	model, err := ocs.FindSecretModel(ocs.SecretModels(config, time.Now()), id)
+	if err != nil {
+		return 1, err
+	}
+	return ocs.OpenSecret(directory, model, ocs.OpenOptions{SkipPermissions: skip})
 }
 
 // runOpen is Enter in the picker without the picker, so another program (a

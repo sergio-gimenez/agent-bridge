@@ -546,8 +546,10 @@ func (p *picker) renderFooter(width int, target *Account, selected *Session, res
 			hints = append(hints, hint{"^g", "use " + strings.ToUpper(suggested.Name)})
 		}
 		return p.clickableHints(append(hints, hint{"^y", "yolo"}, hint{"esc", "back"}), width)
+	case p.newConversation != nil && p.newConversation.secret:
+		return p.clickableHints([]hint{{"f1", "help"}, {"enter", "start"}, {"^t", "model"}, {"^s", "secret off"}, {"^y", "yolo"}, {"esc", "back"}}, width)
 	case p.newConversation != nil:
-		hints := []hint{{"f1", "help"}, {"enter", "start"}, {"^t", "agent/account"}}
+		hints := []hint{{"f1", "help"}, {"enter", "start"}, {"^t", "agent/account"}, {"^s", "secret"}}
 		if suggested := p.recommendedTarget(); suggested != nil {
 			hints = append(hints, hint{"^g", "use " + strings.ToUpper(suggested.Name)})
 		}

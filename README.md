@@ -77,6 +77,10 @@ flowchart LR
   [Forks and handoffs](docs/forking.md).
 - **Start fresh anywhere.** `Ctrl+N` starts a blank conversation in any project
   you have worked in, with any account, from the same limits view.
+- **Talk without leaving a trace.** `Ctrl+N`, then `Ctrl+S`, starts a secret
+  OpenCode conversation: its store lives in RAM, without plugins or MCPs, and
+  is deleted on exit, and only local or zero-retention models can be picked.
+  [Secret conversations](docs/secret.md).
 - **Hand a session to another machine.** `Ctrl+O` pushes it to an always-on box
   before you leave, and `Ctrl+R` pulls it back as the same session, not a copy.
   [Push and pull](docs/push-pull.md).
