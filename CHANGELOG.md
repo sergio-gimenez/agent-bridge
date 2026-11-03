@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-03
+
 ### Added
 
 - **Secret conversations.** `Ctrl+S` in the new conversation dialog, or
@@ -15,6 +17,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   models listed with zero retention in its privacy table. The rest are shown
   with the reason they are left out, and `secret.models` in the config
   overrides the decision. See [secret conversations](docs/secret.md).
+
+### Fixed
+
+- The new conversation, secret and "Open in…" dialogs show a permission bypass
+  with the list's red `YOLO` badge, instead of dim text that was easy to miss.
 
 ## [2.0.0] - 2026-10-28
 
@@ -258,5 +265,6 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `--print` to list recent sessions without opening the picker.
 - `npm run install:local` to install `ocs` into `~/.local/bin` without root.
 
-[Unreleased]: https://github.com/sergio-gimenez/agent-bridge/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/sergio-gimenez/agent-bridge/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/sergio-gimenez/agent-bridge/releases/tag/v2.1.0
 [2.0.0]: https://github.com/sergio-gimenez/agent-bridge/releases/tag/v2.0.0
