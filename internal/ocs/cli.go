@@ -19,6 +19,10 @@ type Options struct {
 	Target string
 	// Ignore the cache for this run and rebuild it from scratch.
 	Rescan bool
+	// agb new --secret [--model ID]: a secret conversation, on that model or
+	// chosen in the dialog.
+	Secret      bool
+	SecretModel string
 }
 
 // --claude-account and --codex-account read better at the call site, but a
@@ -112,6 +116,7 @@ func PrintHelp(out io.Writer) {
 		"  agb open SESSION-ID [--target NAME] [--fork] [--dangerous|--safe]",
 		"  agb herdr install|uninstall [--target NAME] [--dry-run]",
 		"  agb new [--target NAME] [--dir DIR] [--dangerous|--safe]",
+		"  agb new --secret [--model ID] [--dir DIR]",
 		"  agb limits [--json] [--refresh]",
 		"  agb experiment run|report|outcome [flags] (see docs/headroom-experiment.md)",
 		"  agb setup --example",
@@ -141,6 +146,9 @@ func PrintHelp(out io.Writer) {
 		"unless --target says otherwise.",
 		"agb new starts a blank conversation; without --target it opens an account",
 		"and directory chooser. The directory defaults to your current directory.",
+		"agb new --secret starts an OpenCode conversation that leaves nothing behind,",
+		"on a model whose provider keeps nothing either; without --model it opens",
+		"the chooser with Ctrl+S on. agb help covers which models qualify.",
 		"agb limits reports provider subscription headroom and a suggested target;",
 		"--json is the stable integration interface and --refresh bypasses its 2m cache.",
 		"",
@@ -151,6 +159,7 @@ func PrintHelp(out io.Writer) {
 		"  Enter                 follow the route shown in the badge",
 		"  Ctrl+F                fork: branch that route into a new session",
 		"  Ctrl+N                new conversation: choose agent/account and directory",
+		"  Ctrl+S (in Ctrl+N)    secret conversation: nothing kept, private models only",
 		"  Ctrl+E / right-click  show conversation actions",
 		"  Ctrl+O                push the session to another machine (Claude Code, Codex)",
 		"  Ctrl+R                browse another machine's sessions; Enter pulls one here",
@@ -198,26 +207,42 @@ func PrintSessions(out io.Writer, sessions []Session) {
 	}
 }
 
+const newUsage = "agb new [--target NAME] [--dir DIR] [--dangerous|--safe] [--secret [--model ID]]"
+
 func ParseNewArgs(argv []string) (directory string, options Options, err error) {
 	var flags []string
+	secret, model := false, ""
 	for i := 0; i < len(argv); i++ {
 		arg := argv[i]
 		switch {
-		case arg == "--dir" || targetFlags[arg]:
+		case arg == "--dir" || arg == "--model" || targetFlags[arg]:
 			if i+1 >= len(argv) || strings.TrimSpace(argv[i+1]) == "" || strings.HasPrefix(argv[i+1], "--") {
 				return "", Options{}, fmt.Errorf("%s needs a value", arg)
 			}
 			i++
-			if arg == "--dir" {
+			switch arg {
+			case "--dir":
 				directory = expandHome(argv[i])
-			} else {
+			case "--model":
+				model = strings.TrimSpace(argv[i])
+			default:
 				flags = append(flags, arg, argv[i])
 			}
+		case arg == "--secret":
+			secret = true
 		case arg == "--dangerous" || arg == "--skip-permissions" || arg == "--yolo" || arg == "--safe" || arg == "--no-skip-permissions" || arg == "--help" || arg == "-h":
 			flags = append(flags, arg)
 		default:
-			return "", Options{}, fmt.Errorf("Unknown argument %q; usage: agb new [--target NAME] [--dir DIR] [--dangerous|--safe]", arg)
+			return "", Options{}, fmt.Errorf("Unknown argument %q; usage: %s", arg, newUsage)
 		}
 	}
-	return directory, ParseArgs(flags), nil
+	options = ParseArgs(flags)
+	options.Secret, options.SecretModel = secret, model
+	switch {
+	case model != "" && !secret:
+		return "", Options{}, fmt.Errorf("--model is for a secret conversation; usage: %s", newUsage)
+	case secret && options.Target != "" && options.Target != "oc" && options.Target != "opencode":
+		return "", Options{}, fmt.Errorf("A secret conversation is always OpenCode; drop --target %s", options.Target)
+	}
+	return directory, options, nil
 }

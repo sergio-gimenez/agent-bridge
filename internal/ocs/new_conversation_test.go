@@ -256,3 +256,28 @@ func TestCtrlTOpensTheSelectionInAnAccount(t *testing.T) {
 		t.Fatalf("Ctrl+F after clicking CC1: %+v", result)
 	}
 }
+
+// Ctrl+Y in the dialog shows the same red badge as the list's prompt line.
+func TestNewConversationYoloBadge(t *testing.T) {
+	p := limitsPicker()
+	p.openNew("/tmp/project")
+	frame := p.frame(140, 30)
+	if strings.Contains(frame, alarm(" YOLO ")) || !strings.Contains(plain(frame), "asks for permissions") {
+		t.Fatalf("YOLO shown before it was asked for:\n%s", plain(frame))
+	}
+	p.handle(Key{Name: "y", Ctrl: true})
+	frame = p.frame(140, 30)
+	if !strings.Contains(frame, alarm(" YOLO ")+red(" bypasses permission checks")) {
+		t.Fatalf("dialog lacks the red YOLO badge:\n%q", frame)
+	}
+}
+
+func TestPermissionNoteFitsItsWidth(t *testing.T) {
+	for _, yolo := range []bool{false, true} {
+		for width := -1; width < 40; width++ {
+			if got := visibleWidth(permissionNote(yolo, width)); got > max(0, width) {
+				t.Fatalf("yolo=%v width=%d took %d cells", yolo, width, got)
+			}
+		}
+	}
+}
