@@ -338,6 +338,23 @@ func (p *picker) clickNew(y int) bool {
 	return true
 }
 
+// permissionNote states a dialog's launch permissions in at most width cells:
+// the list's red YOLO badge when checks are bypassed, dim text otherwise.
+func permissionNote(yolo bool, width int) string {
+	if !yolo {
+		return dim(truncatePlain("asks for permissions", width))
+	}
+	const badge = " YOLO "
+	if width < len(badge) {
+		return ""
+	}
+	note := alarm(badge)
+	if rest := truncatePlain(" bypasses permission checks", width-len(badge)); rest != "" {
+		note += red(rest)
+	}
+	return note
+}
+
 func (p *picker) drawNew(lines []string, width, bodyRows int) {
 	dialog := p.newConversation
 	if dialog.session != nil {
@@ -354,12 +371,8 @@ func (p *picker) drawNew(lines []string, width, bodyRows int) {
 	if target != nil {
 		label = destinationName(target)
 	}
-	permissions := "asks for permissions"
-	if p.newYoloFor(target) {
-		permissions = "YOLO: bypasses permission checks"
-	}
 	body := []string{
-		bold(truncatePlain(label, inner/2)) + dim(" · "+truncatePlain(permissions, inner/2)),
+		bold(truncatePlain(label, inner/2)) + dim(" · ") + permissionNote(p.newYoloFor(target), inner/2-3),
 		"",
 		bold("Directory ") + truncatePlain(dialog.directory+"▏", max(1, inner-10)),
 	}
@@ -411,16 +424,12 @@ func (p *picker) drawNew(lines []string, width, bodyRows int) {
 func (p *picker) drawSecret(lines []string, width, bodyRows int) {
 	dialog := p.newConversation
 	inner := width - 4
-	permissions := "asks for permissions"
-	if p.newYoloFor(&OpencodeAccount) {
-		permissions = "YOLO: bypasses permission checks"
-	}
 	directory := dialog.directory + "▏"
 	if dialog.directory == "" {
 		directory += dim(" blank: a scratch directory, no project")
 	}
 	body := []string{
-		bold("OpenCode ") + magenta("SECRET") + dim(truncatePlain(" · "+permissions, max(1, inner-15))),
+		bold("OpenCode ") + magenta("SECRET") + dim(" · ") + permissionNote(p.newYoloFor(&OpencodeAccount), inner-18),
 		dim(truncatePlain("Nothing is kept: the store lives in RAM, without plugins or MCPs, and is deleted when OpenCode exits.", inner)),
 		"",
 		bold("Directory ") + truncatePlain(directory, max(1, inner-10)),
@@ -545,12 +554,9 @@ func (p *picker) drawOpenIn(lines []string, width, bodyRows int) {
 			route = " · seeded from " + sessionLabel(session)
 		}
 	}
-	permissions := "asks for permissions"
-	if p.newYoloFor(target) {
-		permissions = "YOLO: bypasses permission checks"
-	}
+	route = truncatePlain(route+" · ", inner/2)
 	body := []string{
-		bold(truncatePlain(label, inner/2)) + dim(truncatePlain(route+" · "+permissions, inner/2)),
+		bold(truncatePlain(label, inner/2)) + dim(route) + permissionNote(p.newYoloFor(target), inner/2-visibleWidth(route)),
 		dim(truncatePlain(ShortenHome(session.Directory), inner)),
 	}
 	if dialog.err != "" {
