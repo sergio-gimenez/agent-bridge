@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-26
+
 ### Added
 
 - **Antigravity CLI.** Conversations from Google's `agy` show up in the list as
@@ -288,6 +290,7 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `--print` to list recent sessions without opening the picker.
 - `npm run install:local` to install `ocs` into `~/.local/bin` without root.
 
-[Unreleased]: https://github.com/sergio-gimenez/agent-bridge/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/sergio-gimenez/agent-bridge/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/sergio-gimenez/agent-bridge/releases/tag/v2.2.0
 [2.1.0]: https://github.com/sergio-gimenez/agent-bridge/releases/tag/v2.1.0
 [2.0.0]: https://github.com/sergio-gimenez/agent-bridge/releases/tag/v2.0.0
