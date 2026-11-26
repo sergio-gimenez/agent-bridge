@@ -183,8 +183,8 @@ func OpenCodexSession(id, directory string, opts OpenOptions) (int, error) {
 	return launch("codex", args, directory, codexEnvironment(opts.Account))
 }
 
-// Cross-tool: session ids are not portable between OpenCode, Claude Code and
-// Codex, so open a fresh session in the target tool seeded with the transcript.
+// Cross-tool: session ids are not portable between OpenCode, Claude Code,
+// Codex and Antigravity, so open a fresh session in the target tool seeded with the transcript.
 
 func OpenOpencodeFresh(directory, prompt string, opts OpenOptions) (int, error) {
 	if opencodeAccountV2(opts.Account) {
@@ -249,13 +249,17 @@ func OpenWith(session Session, target Account, opts OpenOptions) (int, error) {
 
 	// OpenCode 2's TUI has no --fork (only its headless run does), so a fork
 	// there takes the seeded route below, like any other new session.
+	// agy has no fork flag at all, so its forks are seeded too.
 	opencodeSeedFork := target.Tool == SourceOpencode && opts.Fork && opencodeAccountV2(&target)
-	if IsNativeTarget(&session, &target) && !opencodeSeedFork {
+	antigravitySeedFork := target.Tool == SourceAntigravity && opts.Fork
+	if IsNativeTarget(&session, &target) && !opencodeSeedFork && !antigravitySeedFork {
 		switch target.Tool {
 		case SourceClaude:
 			return OpenClaudeSession(session.ID, session.Directory, opts)
 		case SourceCodex:
 			return OpenCodexSession(session.ID, session.Directory, opts)
+		case SourceAntigravity:
+			return OpenAntigravitySession(session.ID, session.Directory, opts)
 		}
 		return OpenOpencodeSession(session.ID, session.Directory, opts)
 	}
@@ -272,6 +276,8 @@ func OpenWith(session Session, target Account, opts OpenOptions) (int, error) {
 		return OpenClaudeFresh(seed.Directory, seed.Prompt, opts)
 	case SourceCodex:
 		return OpenCodexFresh(seed.Directory, seed.Prompt, opts)
+	case SourceAntigravity:
+		return OpenAntigravityFresh(seed.Directory, seed.Prompt, opts)
 	}
 	return OpenOpencodeFresh(seed.Directory, seed.Prompt, opts)
 }
@@ -291,6 +297,11 @@ func OpenNew(directory string, target Account, opts OpenOptions) (int, error) {
 		command, env = "codex", codexEnvironment(&target)
 		if opts.SkipPermissions {
 			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+		}
+	case SourceAntigravity:
+		command = "agy"
+		if opts.SkipPermissions {
+			args = append(args, "--dangerously-skip-permissions")
 		}
 	case SourceOpencode:
 		command = opencodeCommand(&target)

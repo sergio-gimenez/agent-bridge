@@ -9,7 +9,7 @@ import (
 
 const pickerGuide = `Getting started
 
-Run agb to browse saved conversations across OpenCode, Claude Code and Codex accounts. Type to filter by title, project directory and your prompts; words match without regard to case. Run agb --assistant to search assistant replies too.
+Run agb to browse saved conversations across OpenCode, Claude Code, Codex and Antigravity accounts. Type to filter by title, project directory and your prompts; words match without regard to case. Run agb --assistant to search assistant replies too.
 
 Up/Down selects a conversation; PgUp/PgDn moves ten rows, and Home/End jumps to the first/last result. Backspace edits your search. Click a row to select it, double-click to open it, or use the mouse wheel to move the selection. Click footer shortcuts to run them.
 
@@ -33,7 +33,7 @@ Ctrl+E or right-click opens actions for the selected conversation, including sta
 
 Accounts, limits and permissions
 
-OC means OpenCode, CC means Claude Code, and CX means Codex. Configured account names appear in their labels, such as CC1 or CX2. Configure claudeAccounts with name/configDir and codexAccounts with name/codexHome in ~/.config/agentbridge/config.json. Omit the home path to use the tool's default account. Authenticate accounts with their own agent CLI before using them here.
+OC means OpenCode, CC means Claude Code, CX means Codex, and AG means the Antigravity CLI (agy). Configured account names appear in their labels, such as CC1 or CX2. Configure claudeAccounts with name/configDir and codexAccounts with name/codexHome in ~/.config/agentbridge/config.json. Omit the home path to use the tool's default account. Authenticate accounts with their own agent CLI before using them here. Antigravity has one account; it appears once agy has run on this machine, and "antigravity": false in config.json hides it. agy has no fork flag, so Ctrl+F on an AG conversation starts a new one seeded with the transcript.
 
 For an isolated OpenCode wrapper, add an opencodeAccounts entry with name, command and dbPath. The wrapper sets its environment and dbPath identifies its session database. Optional configHome sets its XDG configuration root for setup plans. The default oc target remains available. Choose a wrapper with Ctrl+T or agb --target NAME; crossing stores creates a seeded fork.
 

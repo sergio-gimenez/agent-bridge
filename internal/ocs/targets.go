@@ -8,9 +8,10 @@ import "strings"
 var OpencodeAccount = Account{Tool: SourceOpencode, Name: "oc"}
 
 var fallbackLabel = map[Source]string{
-	SourceOpencode: "OC",
-	SourceClaude:   "CC",
-	SourceCodex:    "CX",
+	SourceOpencode:    "OC",
+	SourceClaude:      "CC",
+	SourceCodex:       "CX",
+	SourceAntigravity: "AG",
 }
 
 func AccountLabel(tool Source, account *Account) string {
@@ -26,6 +27,8 @@ func ToolName(tool Source) string {
 		return "Claude Code"
 	case SourceCodex:
 		return "Codex"
+	case SourceAntigravity:
+		return "Antigravity"
 	}
 	return "OpenCode"
 }
@@ -63,7 +66,7 @@ func NextTarget(count, current, step int) int {
 	return ((current+step)%count + count) % count
 }
 
-var toolOrder = []Source{SourceOpencode, SourceClaude, SourceCodex}
+var toolOrder = []Source{SourceOpencode, SourceClaude, SourceCodex, SourceAntigravity}
 
 // NextToolTarget jumps to the next *tool*, skipping the other accounts of the
 // current one: the useful move is "try this over in Codex", not "walk every

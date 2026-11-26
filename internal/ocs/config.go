@@ -11,7 +11,8 @@ type Config struct {
 	Setup *SetupConfig
 	// When true, launch the target tool with permission checks bypassed
 	// (claude: --dangerously-skip-permissions, opencode: --auto,
-	// codex: --dangerously-bypass-approvals-and-sandbox).
+	// codex: --dangerously-bypass-approvals-and-sandbox,
+	// agy: --dangerously-skip-permissions).
 	SkipPermissions bool
 	// Default OpenCode settings and optional isolated wrapper targets.
 	Opencode             Account
@@ -20,6 +21,11 @@ type Config struct {
 	DefaultClaudeAccount string
 	CodexAccounts        []Account
 	DefaultCodexAccount  string
+	// The one Antigravity account, or nil when agy is not set up here.
+	Antigravity *Account
+	// Whether the config file says anything about antigravity; when it does
+	// not, LoadConfig turns it on for a machine where agy has already run.
+	antigravitySet bool
 	// Hosts the picker offers first for Ctrl+O (push to another machine).
 	MoveHosts []string
 	// Per host, a shell command agb push runs there once the session has
@@ -148,6 +154,7 @@ func ParseConfig(raw []byte) (Config, error) {
 	claude := parseAccounts(parsed["claudeAccounts"], SourceClaude)
 	codex := parseAccounts(parsed["codexAccounts"], SourceCodex)
 	skip, _ := parsed["skipPermissions"].(bool)
+	antigravity, antigravitySet := parseAntigravityConfig(parsed["antigravity"])
 
 	opencode := OpencodeAccount
 	opencode.SkipPermissions = skipPermissionsOf(parsed["opencode"])
@@ -201,6 +208,8 @@ func ParseConfig(raw []byte) (Config, error) {
 		DefaultClaudeAccount: pickDefault(claude, parsed["defaultClaudeAccount"]),
 		CodexAccounts:        codex,
 		DefaultCodexAccount:  pickDefault(codex, parsed["defaultCodexAccount"]),
+		Antigravity:          antigravity,
+		antigravitySet:       antigravitySet,
 		MoveHosts:            moveHosts,
 		Arrive:               arrive,
 		Secret:               parseSecretConfig(parsed["secret"]),
@@ -209,13 +218,37 @@ func ParseConfig(raw []byte) (Config, error) {
 
 func LoadConfig() Config {
 	raw, err := os.ReadFile(ConfigPath())
+	config, parseErr := Config{}, err
 	if err == nil {
-		if config, err := ParseConfig(raw); err == nil {
-			return config
-		}
+		config, parseErr = ParseConfig(raw)
 	}
-	config, _ := ParseConfig([]byte("{}"))
+	if parseErr != nil {
+		config, _ = ParseConfig([]byte("{}"))
+	}
+	if !config.antigravitySet && antigravityInstalled() {
+		account := AntigravityAccount
+		config.Antigravity = &account
+	}
 	return config
+}
+
+// parseAntigravityConfig reads the "antigravity" key: false turns it off, true or an
+// object (which may carry skipPermissions) turns it on. Absent, it is unset and
+// LoadConfig decides from whether agy has run here.
+func parseAntigravityConfig(raw any) (*Account, bool) {
+	switch value := raw.(type) {
+	case bool:
+		if !value {
+			return nil, true
+		}
+		account := AntigravityAccount
+		return &account, true
+	case map[string]any:
+		account := AntigravityAccount
+		account.SkipPermissions = skipPermissionsOf(value)
+		return &account, true
+	}
+	return nil, false
 }
 
 // A tool's default account leads its group, so "the first account of this
@@ -234,12 +267,16 @@ func defaultFirst(accounts []Account, defaultName string) []Account {
 }
 
 // Targets is the one ordered list of destinations the picker cycles: OpenCode,
-// then every Claude account, then every Codex account.
+// then every Claude account, then every Codex account, then Antigravity.
 func (config Config) Targets() []Account {
 	targets := []Account{config.Opencode}
 	targets = append(targets, config.OpencodeAccounts...)
 	targets = append(targets, defaultFirst(config.ClaudeAccounts, config.DefaultClaudeAccount)...)
-	return append(targets, defaultFirst(config.CodexAccounts, config.DefaultCodexAccount)...)
+	targets = append(targets, defaultFirst(config.CodexAccounts, config.DefaultCodexAccount)...)
+	if config.Antigravity != nil {
+		targets = append(targets, *config.Antigravity)
+	}
+	return targets
 }
 
 // DefaultSkipPermissions: the CLI flag decides for this run; without one, the

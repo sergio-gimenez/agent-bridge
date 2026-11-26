@@ -1,5 +1,5 @@
 // Package ocs implements AgentBridge's shared session picker and setup sync for
-// OpenCode, Claude Code and Codex.
+// OpenCode, Claude Code, Codex and Antigravity.
 package ocs
 
 import "strings"
@@ -10,6 +10,8 @@ const (
 	SourceOpencode Source = "opencode"
 	SourceClaude   Source = "claude"
 	SourceCodex    Source = "codex"
+	// Google Antigravity CLI (agy).
+	SourceAntigravity Source = "antigravity"
 )
 
 // SearchScope decides whether assistant replies are part of what a query

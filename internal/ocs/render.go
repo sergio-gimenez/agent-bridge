@@ -27,9 +27,10 @@ func accent(value string) string  { return style("1;36", value) }
 func alarm(value string) string   { return style("1;7;31", value) }
 
 var sourceColor = map[Source]func(string) string{
-	SourceOpencode: magenta,
-	SourceClaude:   blue,
-	SourceCodex:    green,
+	SourceOpencode:    magenta,
+	SourceClaude:      blue,
+	SourceCodex:       green,
+	SourceAntigravity: yellow,
 }
 
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
