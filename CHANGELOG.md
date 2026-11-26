@@ -6,6 +6,29 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Antigravity CLI.** Conversations from Google's `agy` show up in the list as
+  `AG`, searchable by your prompts and titled from its own summaries. `Enter`
+  resumes one with `agy --conversation`. `Ctrl+T`, `Tab` and `Ctrl+N` can send
+  a conversation from any other tool into Antigravity, to use its Gemini 4
+  models, and back out again. `agy` has no fork flag, so `Ctrl+F` starts a new
+  conversation seeded with the transcript. The `AG` target appears once `agy`
+  has run on the machine; `"antigravity": false` in the config hides it, and
+  `"antigravity": { "skipPermissions": true }` sets its default. Its limits show
+  as `unknown`, because `agy` reports usage only inside its own TUI.
+  `agb sync` refuses `ag` as a profile target until it can write `agy`'s MCP
+  config. See [Antigravity](docs/agents/antigravity.md).
+
+### Changed
+
+- **Documentation reorganised.** The site has its own landing page, an install
+  guide covering every agent, a page per agent under
+  [docs/agents/](docs/agents/index.md) with a table of what works where, and an
+  Extend section with [scripting agb](docs/extend/scripting.md) and
+  [adding an agent](docs/extend/adding-an-agent.md). The multiple-account guides
+  moved to `docs/agents/claude-code.md` and `docs/agents/codex.md`.
+
 ## [2.1.0] - 2026-11-03
 
 ### Added

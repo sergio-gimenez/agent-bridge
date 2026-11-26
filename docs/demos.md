@@ -13,7 +13,7 @@ One list across OpenCode, Claude Code and Codex, filtered by a word from your
 prompts. `Ctrl+T` then shows every account's limits, and the Claude session,
 whose account is nearly out of its 5h window, opens in the suggested Codex
 account as a transcript-seeded fork.
-Recording: [`demo.cast`](demo.cast) · More: [AgentBridge](../README.md)
+Recording: [`demo.cast`](demo.cast) · More: [Using the picker](getting-started/picker.md)
 
 ## Right-click actions and new conversations
 

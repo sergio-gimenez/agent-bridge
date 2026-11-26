@@ -15,8 +15,9 @@ opencode --session <id> --fork
 codex fork <id>
 ```
 
-`opencode --session <id> --fork` is OpenCode 1; OpenCode 2's TUI has no fork
-flag, so there a fork takes the transcript-seeded path below.
+`opencode --session <id> --fork` is OpenCode 1. OpenCode 2's TUI and the
+Antigravity CLI have no fork flag, so a fork there takes the transcript-seeded
+path below, landing in the same tool as a new conversation.
 
 Ids don't survive a hop between tools or between accounts, so across one of those
 both `Ctrl+F` and `Enter` fall back to the transcript-seeded path below. That
@@ -25,7 +26,7 @@ path is already a fork; the original never changes either way.
 ## Migration is a fork, not a move
 
 Cross-tool and cross-account opens do **not** migrate a session. Ids are not
-portable between OpenCode, Claude Code and Codex, or between two accounts of the
+portable between OpenCode, Claude Code, Codex and Antigravity, or between two accounts of the
 same tool, so `agb` starts a **new** session in the target and pastes the old
 transcript in as context. Consequences worth knowing:
 

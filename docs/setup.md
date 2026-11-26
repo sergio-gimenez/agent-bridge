@@ -4,6 +4,11 @@ AgentBridge (`agb`) can apply a named setup profile to OpenCode, Claude Code, an
 accounts. Define a capability once, choose its targets, then run `agb sync`.
 Existing session-picker commands continue to work.
 
+Antigravity isn't a valid target yet. `agy` keeps MCP servers in
+`~/.gemini/config/mcp_config.json`, a format `agb` doesn't write, so a profile
+that lists `ag` stops with an error instead of applying half of itself. See
+[Antigravity](agents/antigravity.md#what-doesnt-work-yet).
+
 ## Start with Cloudflare documentation
 
 Print a starter block to merge into your existing `agb` configuration:

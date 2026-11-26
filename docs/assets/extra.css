@@ -1,0 +1,192 @@
+/* AgentBridge site styles. Built on the theme's own variables so light and
+   dark schemes both work without separate rules. */
+
+:root {
+  --agb-brand: #526cfe;
+  /* The picker's colours for each agent's rows. */
+  --agb-cc: #3b82f6;
+  --agb-cx: #16a34a;
+  --agb-oc: #c026d3;
+  --agb-ag: #ca8a04;
+}
+
+[data-md-color-scheme="slate"] {
+  --agb-cc: #60a5fa;
+  --agb-cx: #4ade80;
+  --agb-oc: #e879f9;
+  --agb-ag: #facc15;
+}
+
+/* ---- Landing hero ------------------------------------------------------ */
+
+.md-typeset .agb-hero {
+  text-align: center;
+  padding: 1.6rem 0 0.4rem;
+}
+
+.md-typeset .agb-hero__logo {
+  display: block;
+  margin: 0 auto 0.8rem;
+}
+
+.md-typeset .agb-hero__title {
+  font-size: clamp(1.7rem, 4.2vw, 2.6rem);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  max-width: 18em;
+  margin: 0 auto 0.6rem;
+  color: var(--md-default-fg-color);
+}
+
+/* The heading anchor (¶) looks out of place on a hero title. */
+.md-typeset .agb-hero__title .headerlink {
+  display: none;
+}
+
+.md-typeset .agb-hero__lede {
+  font-size: 1.05rem;
+  max-width: 34em;
+  margin: 0 auto 1.1rem;
+  color: var(--md-default-fg-color--light);
+}
+
+.md-typeset .agb-hero pre {
+  display: inline-block;
+  max-width: 100%;
+  text-align: left;
+  margin: 0.4rem auto 1rem;
+}
+
+.md-typeset .agb-hero .md-button {
+  margin: 0.2rem 0.3rem;
+}
+
+.md-typeset .md-button--primary {
+  background-color: var(--agb-brand);
+  border-color: var(--agb-brand);
+  color: #fff;
+}
+
+.md-typeset .md-button--primary:hover,
+.md-typeset .md-button--primary:focus {
+  background-color: color-mix(in srgb, var(--agb-brand) 85%, #000);
+  border-color: color-mix(in srgb, var(--agb-brand) 85%, #000);
+  color: #fff;
+}
+
+/* ---- Agent chips ------------------------------------------------------- */
+
+.md-typeset .agb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0 auto 1.1rem;
+}
+
+.md-typeset .agb-chip {
+  --chip: var(--md-default-fg-color--light);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.7rem;
+  border: 0.05rem solid color-mix(in srgb, var(--chip) 55%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--chip) 10%, transparent);
+  color: var(--md-default-fg-color);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 125ms;
+}
+
+.md-typeset .agb-chip::first-letter {
+  color: var(--chip);
+}
+
+.md-typeset .agb-chip:hover {
+  background: color-mix(in srgb, var(--chip) 22%, transparent);
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset .agb-chip--cc { --chip: var(--agb-cc); }
+.md-typeset .agb-chip--cx { --chip: var(--agb-cx); }
+.md-typeset .agb-chip--oc { --chip: var(--agb-oc); }
+.md-typeset .agb-chip--ag { --chip: var(--agb-ag); }
+
+/* An inline row label, as the picker prints it: <span class="agb-label agb-label--cx">CX1</span> */
+.md-typeset .agb-label {
+  display: inline-block;
+  padding: 0 0.35em;
+  border-radius: 0.2rem;
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+  font-weight: 700;
+  color: var(--chip, var(--md-default-fg-color));
+  background: color-mix(in srgb, var(--chip, var(--md-default-fg-color)) 12%, transparent);
+}
+
+.md-typeset .agb-label--cc { --chip: var(--agb-cc); }
+.md-typeset .agb-label--cx { --chip: var(--agb-cx); }
+.md-typeset .agb-label--oc { --chip: var(--agb-oc); }
+.md-typeset .agb-label--ag { --chip: var(--agb-ag); }
+
+/* ---- Screenshot -------------------------------------------------------- */
+
+.md-typeset .agb-shot {
+  margin: 1.2rem auto 2rem;
+}
+
+.md-typeset .agb-shot img {
+  border-radius: 0.5rem;
+  box-shadow: var(--md-shadow-z2);
+}
+
+.md-typeset .agb-shot figcaption {
+  font-size: 0.68rem;
+  color: var(--md-default-fg-color--lighter);
+  max-width: none;
+}
+
+/* ---- Cards ------------------------------------------------------------- */
+
+.md-typeset .grid.cards .lucide {
+  color: var(--agb-brand);
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+  margin-right: 0.2em;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .grid.cards .lucide {
+  color: color-mix(in srgb, var(--agb-brand) 70%, #fff);
+}
+
+/* Support matrix on the agents overview. */
+.md-typeset .agb-matrix td:not(:first-child),
+.md-typeset .agb-matrix th:not(:first-child) {
+  text-align: center;
+}
+
+/* ---- Polish ------------------------------------------------------------- */
+
+.md-typeset .agb-hero__title,
+.md-typeset .agb-hero__lede {
+  text-wrap: balance;
+}
+
+/* Flags such as --assistant must not break across lines inside a card. */
+.md-typeset .grid.cards code {
+  white-space: nowrap;
+}
+
+/* The landing diagram reads better at a fixed, centred width. */
+.md-typeset .agb-diagram .mermaid {
+  max-width: 46rem;
+  margin: 0 auto;
+}
+
+/* Commands and variable names in the support table stay on one line. */
+.md-typeset .agb-matrix code {
+  white-space: nowrap;
+}
