@@ -2,11 +2,11 @@
 # Build locally with `make docs` or preview with `make docs-serve`.
 #
 # docs_dir is a staging tree, not docs/: scripts/build-docs.sh copies docs/
-# there and adds README.md as index.md with its links rewritten.
+# there and rewrites links that point at repo files outside docs/.
 
 [project]
 site_name = "AgentBridge"
-site_description = "Your sessions and shared agent setup, in one place."
+site_description = "Every coding-agent session you have, in one list: Claude Code, Codex, OpenCode and Antigravity."
 site_url = "https://agentbridge.sergiogimenez.com/"
 repo_url = "https://github.com/sergio-gimenez/agent-bridge"
 repo_name = "sergio-gimenez/agent-bridge"
@@ -16,22 +16,38 @@ site_dir = "site"
 
 nav = [
   { "Home" = "index.md" },
-  { "Demos" = "demos.md" },
+  { "Get started" = [
+    { "Install" = "getting-started/install.md" },
+    { "Using the picker" = "getting-started/picker.md" },
+    { "Demos" = "demos.md" },
+  ] },
+  { "Agents" = [
+    { "Overview" = "agents/index.md" },
+    { "Claude Code" = "agents/claude-code.md" },
+    { "Codex" = "agents/codex.md" },
+    { "OpenCode" = "agents/opencode.md" },
+    { "Antigravity" = "agents/antigravity.md" },
+  ] },
   { "Guides" = [
     { "Forks and handoffs" = "forking.md" },
     { "Push and pull" = "push-pull.md" },
     { "Secret conversations" = "secret.md" },
     { "Switching agents in Herdr" = "herdr.md" },
-    { "Share skills and MCPs" = "setup.md" },
-    { "Multiple Claude Code accounts" = "multiple-claude-accounts.md" },
-    { "Multiple Codex accounts" = "multiple-codex-accounts.md" },
-    { "Memory and diagrams across tools" = "integrations.md" },
-    { "Configuration and internals" = "reference.md" },
   ] },
-  { "Design" = [
-    { "Shared agent setup" = "shared-agent-setup.md" },
+  { "Extend" = [
+    { "Share skills and MCPs" = "setup.md" },
+    { "Memory and diagrams across tools" = "integrations.md" },
+    { "Scripting agb" = "extend/scripting.md" },
+    { "Adding an agent" = "extend/adding-an-agent.md" },
+  ] },
+  { "Reference" = [
+    { "Configuration and internals" = "reference.md" },
+    { "Design: shared agent setup" = "shared-agent-setup.md" },
+    { "The headroom experiment" = "headroom-experiment.md" },
   ] },
 ]
+
+extra_css = ["assets/extra.css"]
 
 [project.theme]
 language = "en"
@@ -45,6 +61,7 @@ features = [
   "navigation.instant",
   "navigation.instant.prefetch",
   "navigation.sections",
+  "navigation.tabs",
   "navigation.top",
   "navigation.tracking",
   "search.highlight",
@@ -83,3 +100,5 @@ pymdownx.superfences.custom_fences = [
   { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ]
 pymdownx.tabbed.alternate_style = true
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"

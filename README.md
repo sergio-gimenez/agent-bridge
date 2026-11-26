@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Every coding-agent session you have, in one list.</b><br>
-  Search OpenCode, Claude Code and Codex across all your accounts, open any session in
+  Search Claude Code, Codex, OpenCode and Antigravity across all your accounts, open any session in
   whichever one has headroom left, carry it between machines, and keep skills and MCPs in sync.
 </p>
 
@@ -51,6 +51,7 @@ flowchart LR
   OC["OpenCode<br/>opencode.db"] -->|read only| AGB
   CC["Claude Code<br/>cc1, cc2 …"] -->|read only| AGB
   CX["Codex<br/>cx1, cx2 …"] -->|read only| AGB
+  AG["Antigravity CLI<br/>agy"] -->|read only| AGB
   LIM["subscription limits<br/>5h and 7d windows"] -->|suggest the most headroom| AGB
   AGB(("agb"))
   AGB -->|"Enter: native resume"| SAME["same tool and account"]
@@ -62,9 +63,10 @@ flowchart LR
 ## What it does
 
 - **One list for every tool and account.** OpenCode, any number of Claude Code
-  and Codex accounts, and OpenCode wrappers with their own stores. Rows start
-  with where the session lives (`OC`, `CC1`, `CX2`), and the card beside the
-  list shows your latest prompts and the assistant's replies.
+  and Codex accounts, Google's Antigravity CLI (`agy`, with the Gemini 4
+  models), and OpenCode wrappers with their own stores. Rows start with where
+  the session lives (`OC`, `CC1`, `CX2`, `AG`), and the card beside the list
+  shows your latest prompts and the assistant's replies.
 - **Search what you asked.** Typing filters on titles, directories and your own
   prompts (assistant replies too with `--assistant`), and the matches light up
   in the card.
@@ -99,8 +101,9 @@ curl -fsSL https://agentbridge.sergiogimenez.com/install.sh | sh
 ```
 
 This puts a single static `agb` binary in `~/.local/bin`, with no root needed,
-on Linux or macOS (amd64 or arm64). You also need at least one of OpenCode,
-Claude Code and Codex. The script checks the download against the release's
+on Linux or macOS (amd64 or arm64). You also need at least one of Claude Code,
+Codex, OpenCode and the Antigravity CLI; [Install](docs/getting-started/install.md)
+has each one's installer. The script checks the download against the release's
 checksums, and you can [read it](scripts/install.sh) first. Pin a release with
 `| AGB_VERSION=v2.0.0 sh`, or grab an archive from the
 [releases page](https://github.com/sergio-gimenez/agent-bridge/releases).
@@ -113,9 +116,10 @@ git clone https://github.com/sergio-gimenez/agent-bridge.git
 cd agent-bridge && make install
 ```
 
-`agb` finds each tool's default store on its own. To add a second Claude or
-Codex account, see [multiple Claude Code accounts](docs/multiple-claude-accounts.md)
-and [multiple Codex accounts](docs/multiple-codex-accounts.md).
+`agb` finds each tool's default store on its own. Per-agent setup, including a
+second Claude or Codex account, is under [Agents](docs/agents/index.md):
+[Claude Code](docs/agents/claude-code.md), [Codex](docs/agents/codex.md),
+[OpenCode](docs/agents/opencode.md) and [Antigravity](docs/agents/antigravity.md).
 
 Coming from `opencode-sessions` or `ocs`? Configuration and cache now live in
 `~/.config/agentbridge` and `~/.cache/agentbridge`, and environment overrides
@@ -147,7 +151,7 @@ Nothing of yours is read and nothing gets launched. Details in
 | `Ctrl+T` | Choose where to open the selection, from every account and its limits; `Enter` resumes there, `Ctrl+F` forks there |
 | `Ctrl+N` | Start a new conversation: choose an agent/account and project directory |
 | `Ctrl+E` or right-click | Open the selected conversation's action menu |
-| `Shift+Tab` | Cycle the pinned target backwards: OpenCode ← each Claude account ← each Codex account |
+| `Shift+Tab` | Cycle the pinned target backwards: OpenCode ← each Claude account ← each Codex account ← Antigravity |
 | `Tab` | Open in the *next tool* right away, as a transcript-seeded fork |
 | `Ctrl+G` | Pin the suggested subscription as the target |
 | `Ctrl+Y` | Toggle yolo: bypass permission checks for this launch only |
@@ -176,6 +180,7 @@ assistant's latest replies, with your search terms highlighted.
 | `OC` | An OpenCode session, resumed natively. |
 | `CC1` | A Claude session owned by account `cc1`, resumed natively. |
 | `CX1` | A Codex session owned by account `cx1`, resumed natively. |
+| `AG` | An Antigravity CLI (`agy`) conversation, resumed natively. |
 | `CC1 →` | Enter carries it to the pinned target (shown in the header) as a seeded fork. The arrow takes the target tool's colour. |
 
 Until you press `Shift+Tab` or `Ctrl+G` the target follows the selection, so

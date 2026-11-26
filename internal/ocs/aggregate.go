@@ -49,6 +49,9 @@ func (cache *Cache) AllSessions(config Config, scope SearchScope) []Session {
 	accounts := make([]Account, 0, len(config.ClaudeAccounts)+len(config.CodexAccounts))
 	accounts = append(accounts, config.ClaudeAccounts...)
 	accounts = append(accounts, config.CodexAccounts...)
+	if config.Antigravity != nil {
+		accounts = append(accounts, *config.Antigravity)
+	}
 
 	// One slot per store, filled in parallel, merged in a fixed order so equal
 	// timestamps always list the same way.
@@ -73,11 +76,14 @@ func (cache *Cache) AllSessions(config Config, scope SearchScope) []Session {
 		wg.Add(1)
 		go func(slot int, account *Account) {
 			defer wg.Done()
-			source := claudeSource
-			if account.Tool == SourceCodex {
-				source = codexSource
+			switch account.Tool {
+			case SourceCodex:
+				groups[slot] = cache.fileSessions(codexSource, account, scope)
+			case SourceAntigravity:
+				groups[slot] = cache.antigravitySessions(account, scope)
+			default:
+				groups[slot] = cache.fileSessions(claudeSource, account, scope)
 			}
-			groups[slot] = cache.fileSessions(source, account, scope)
 		}(i+len(opencode), &accounts[i])
 	}
 

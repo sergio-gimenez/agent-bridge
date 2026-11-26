@@ -353,6 +353,8 @@ func BuildSessionSeed(session Session) (SessionSeed, error) {
 		transcript, err = claudeTranscript(session)
 	case SourceCodex:
 		transcript, err = codexTranscript(session)
+	case SourceAntigravity:
+		transcript, err = antigravityTranscript(session)
 	default:
 		transcript, err = opencodeAccountTranscript(session.ID, session.Account)
 	}

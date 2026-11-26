@@ -1,10 +1,27 @@
-# Using multiple Codex accounts
+---
+title: Codex
+description: Use one or several OpenAI Codex accounts from agb, each with its own CODEX_HOME.
+---
 
-`agb` can index and launch sessions from multiple Codex accounts. The mechanism
-is the same one described in
-[Using multiple Claude Code accounts](multiple-claude-accounts.md), namely an
-isolated home directory per account, so this page covers only what differs for
-Codex.
+# Codex
+
+One Codex account needs no setup. Install it, sign in, run a conversation, and
+it shows up in `agb` as <span class="agb-label agb-label--cx">CX</span>:
+
+```bash
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+codex login
+```
+
+`agb` reads the rollouts under `~/.codex/sessions`, resumes with
+`codex resume <id>`, forks with `codex fork <id>`, and asks Codex's local
+app-server for the account's limits. The
+[Codex CLI docs](https://learn.chatgpt.com/docs/codex/cli) cover npm, Homebrew
+and Windows.
+
+For **several Codex accounts**, the mechanism is the one described for
+[Claude Code](claude-code.md): an isolated home directory per account. This page
+covers what differs for Codex.
 
 ## Prerequisites
 
@@ -33,13 +50,13 @@ cx1() { command codex "$@"; }
 cx2() { CODEX_HOME="$HOME/.codex-cx2" command codex "$@"; }
 ```
 
-PowerShell and the persistence notes in the Claude document apply unchanged;
+PowerShell and the persistence notes on the [Claude Code page](claude-code.md#1-create-account-commands) apply unchanged;
 substitute `CODEX_HOME` for `CLAUDE_CONFIG_DIR`.
 
 If you use Herdr, run `agb herdr install --target cx2` after configuring the
 account in agb. This adds its native session integration and saves resume
 commands with the correct `CODEX_HOME`. Restart the agent and review Codex's
-hook trust prompt if it appears. See [Herdr conversation restore](herdr.md#restore-conversations-after-a-restart)
+hook trust prompt if it appears. See [Herdr conversation restore](../herdr.md#restore-conversations-after-a-restart)
 for setup on all accounts, verification and recovery.
 
 ## 2. Authenticate each account
@@ -78,7 +95,7 @@ become picker badges such as `[CX1]` and `[CX2]`.
 ## 4. Use the picker
 
 Controls are the same as for Claude accounts. `Ctrl+T` lists OpenCode, every
-Claude account and every Codex account with their limits and opens the selection
+Claude account, every Codex account and Antigravity with their limits and opens the selection
 in the one you choose; `Shift+Tab` cycles the same list as a pinned target, and
 `Enter` follows whatever route the badge shows.
 

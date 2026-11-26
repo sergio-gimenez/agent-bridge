@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 
-# Stages README.md and docs/ into one Zensical source tree and builds the site.
+# Stages docs/ into a Zensical source tree and builds the site.
 #
-# The Markdown stays written for GitHub, where README.md sits at the root and
-# links into docs/. On the site README.md becomes index.md beside the other
-# pages, so its links are rewritten here instead of in the sources.
+# The Markdown stays written for GitHub, so links out of docs/ to repo files
+# (../CONTRIBUTING.md, ../../demo/README.md) point at the file's place in the
+# repo. The site doesn't carry those files, so they are rewritten here to their
+# GitHub URLs instead of in the sources. docs/index.md is the site's landing
+# page; README.md stays the GitHub one.
 #
 # Usage: build-docs.sh [build|serve]
 
@@ -21,22 +23,20 @@ stage() {
   mkdir -p "${STAGE}"
   cp -R docs/. "${STAGE}/"
 
-  # README links point into docs/ or at repo files the site does not carry.
-  sed -E \
-    -e 's#(\]\(|src="|href=")docs/#\1#g' \
-    -e "s#(\\]\\(|href=\")(demo/|scripts/|LICENSE|CONTRIBUTING\\.md|CHANGELOG\\.md)#\\1${REPO_BLOB}/\\2#g" \
-    README.md >"${STAGE}/index.md"
-
-  # Pages under docs/ reach the README as ../README.md and other repo files as ../X.
-  for page in "${STAGE}"/*.md; do
-    [[ "${page}" == "${STAGE}/index.md" ]] && continue
+  # A page reaches the repo root through one ../ per level of nesting, plus
+  # one to leave docs/. Anything that climbs that far is a repo file.
+  local page rel depth up
+  while IFS= read -r -d '' page; do
+    rel="${page#"${STAGE}"/}"
+    depth="$(tr -cd '/' <<<"${rel}" | wc -c)"
+    up="$(printf '\.\./%.0s' $(seq 0 "${depth}"))"
     sed -E -i.bak \
-      -e 's#\]\(\.\./README\.md#](index.md#g' \
-      -e "s#\\]\\(\\.\\./#](${REPO_BLOB}/#g" \
+      -e "s#\]\(${up}#](${REPO_BLOB}/#g" \
       "${page}"
     rm -f "${page}.bak"
-  done
-  # Served as /install.sh, so the one-line install in the README has a short URL.
+  done < <(find "${STAGE}" -name '*.md' -print0)
+
+  # Served as /install.sh, so the one-line install has a short URL.
   cp scripts/install.sh "${STAGE}/install.sh"
   touch "${STAGE}/.staged"
 }
@@ -47,7 +47,7 @@ check_media() {
   local missing=0 media
   for media in docs/*.gif docs/*.cast; do
     [[ -e "${media}" ]] || continue
-    if ! grep -qF "$(basename "${media}")" "${STAGE}"/*.md; then
+    if ! grep -rqF --include='*.md' "$(basename "${media}")" "${STAGE}"; then
       echo "build-docs: ${media} is not referenced by any page (add it to docs/demos.md)" >&2
       missing=1
     fi
@@ -68,7 +68,7 @@ case "${1:-build}" in
     # A file deleted from docs/ stays staged until the next serve.
     (
       while sleep 1; do
-        if [[ -n "$(find docs README.md -newer "${STAGE}/.staged" -print -quit)" ]]; then
+        if [[ -n "$(find docs -newer "${STAGE}/.staged" -print -quit)" ]]; then
           stage
         fi
       done

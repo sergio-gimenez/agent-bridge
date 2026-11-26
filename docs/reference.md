@@ -3,27 +3,30 @@
 Everything `agb` reads, where it keeps its own state, and the settings that
 change how it launches a session.
 
-## Accounts
+## The config file
 
-Claude Code and Codex each keep credentials, config and session history under a
-single home directory, which makes a second account nothing more than a second
-home. Use each tool's normal home for the first account and an isolated one for
-every account after that:
+`agb` works with no config at all: one account per tool, each in its default
+home. Everything else goes in `~/.config/agentbridge/config.json` (or wherever
+`AGB_CONFIG_PATH` points). Every key is optional.
 
-```bash
-cc1() { command claude "$@"; }
-cc2() { CLAUDE_CONFIG_DIR="$HOME/.claude-cc2" command claude "$@"; }
+| Key | What it sets | Details |
+| --- | --- | --- |
+| `claudeAccounts` | Claude accounts: `name`, optional `configDir`, optional `skipPermissions` | [Claude Code](agents/claude-code.md) |
+| `defaultClaudeAccount` | Where a route that reaches Claude without naming an account lands | [Claude Code](agents/claude-code.md#3-configure-agb) |
+| `codexAccounts` | Codex accounts: `name`, optional `codexHome`, optional `skipPermissions` | [Codex](agents/codex.md) |
+| `defaultCodexAccount` | The same, for Codex | [Codex](agents/codex.md) |
+| `opencode` | The default OpenCode store's `skipPermissions` | [OpenCode](agents/opencode.md) |
+| `opencodeAccounts` | Wrapper stores: `name`, `command`, `dbPath`, optional `configHome` | [OpenCode](agents/opencode.md#wrappers-with-their-own-store) |
+| `antigravity` | `false` to hide Antigravity, or `{ "skipPermissions": true }` | [Antigravity](agents/antigravity.md#configuration) |
+| `skipPermissions` | The global YOLO default | [Permissions](#permissions) |
+| `moveHosts`, `arrive` | Machines for push and pull, and what runs when a session lands | [Push and pull](push-pull.md) |
+| `secret` | Models a secret conversation may or may not use | [Secret conversations](secret.md) |
+| `setup` | Profiles of skills, MCPs and memory for `agb sync` | [Share skills and MCPs](setup.md) |
 
-cx1() { command codex "$@"; }
-cx2() { CODEX_HOME="$HOME/.codex-cx2" command codex "$@"; }
-```
-
-Authenticate each once (`cc2 auth login`, `cx2 login`), then tell `agb` about
-them in `~/.config/agentbridge/config.json`:
+A config with two Claude accounts and two Codex accounts looks like this:
 
 ```json
 {
-  "skipPermissions": false,
   "claudeAccounts": [
     { "name": "cc1" },
     { "name": "cc2", "configDir": "~/.claude-cc2" }
@@ -37,14 +40,10 @@ them in `~/.config/agentbridge/config.json`:
 }
 ```
 
-Omit `configDir` or `codexHome` for the tool's normal default account. `agb` scans
-each account's own store and remembers which account owns what, so a `cc1`
-session resumes in `cc1` unless you deliberately retarget it.
-
-Leave either block out and `agb` falls back to that tool's default home, labelling
-it `[CC]` or `[CX]`.
-
-Pick the starting target from the command line when that helps:
+An account without `configDir` or `codexHome` is the tool's own default home.
+Leave a whole block out and `agb` falls back to that default, labelled `[CC]` or
+`[CX]`. Names share one list of targets across tools, so they must be unique;
+they become the row labels and what `--target` takes:
 
 ```bash
 agb --target cx2            # any account name, or "oc" for OpenCode
@@ -52,41 +51,15 @@ agb --claude-account cc2    # the same thing, said the long way
 agb --codex-account cx2
 ```
 
-Full setup, verification and troubleshooting lives in
-[Using multiple Claude Code accounts](multiple-claude-accounts.md) and
-[Using multiple Codex accounts](multiple-codex-accounts.md).
-
-### OpenCode wrappers
-
-OpenCode wrappers with separate stores can appear as additional targets while
-keeping the default `oc` target. For example:
-
-```json
-{
-  "opencodeAccounts": [
-    {
-      "name": "opencode-i2cat",
-      "command": "opencode-i2cat",
-      "dbPath": "~/.local/share/opencode-i2cat-v1/opencode/opencode.db",
-      "configHome": "~/.config/opencode-i2cat-v1"
-    }
-  ]
-}
-```
-
-`command` names an executable or wrapper on your PATH (or an absolute path);
-the wrapper sets its own environment. `dbPath` identifies its session store.
-`configHome` optionally sets the XDG configuration root used by setup plans.
-Run `agb --target opencode-i2cat` or choose it with `Ctrl+T`; `agb new --target
-opencode-i2cat` starts a blank conversation. Switching between isolated stores
-creates a transcript-seeded fork, while resuming within a store uses its wrapper
-and original session ID. Each store gets its own session cache.
+`agb` records which account owns each session from the store it was scanned
+in, so a `cc1` session resumes in `cc1` unless you deliberately retarget it.
 
 ## Permissions
 
 Launch the target tool with permission checks bypassed
-(`claude --dangerously-skip-permissions` / `opencode --auto` /
-`codex --dangerously-bypass-approvals-and-sandbox`):
+(`claude --dangerously-skip-permissions`, `opencode --auto`,
+`codex --dangerously-bypass-approvals-and-sandbox`,
+`agy --dangerously-skip-permissions`):
 
 ```bash
 agb --dangerous     # also --skip-permissions / --yolo
@@ -107,7 +80,8 @@ Defaults live in `~/.config/agentbridge/config.json`, globally or per agent:
     { "name": "cc1" },
     { "name": "cc2", "configDir": "~/.claude-cc2", "skipPermissions": true }
   ],
-  "codexAccounts": [{ "name": "cx1", "skipPermissions": true }]
+  "codexAccounts": [{ "name": "cx1", "skipPermissions": true }],
+  "antigravity": { "skipPermissions": false }
 }
 ```
 
@@ -136,6 +110,8 @@ Claude Code limits come from the account's OAuth usage endpoint; Codex limits
 come through its local app-server protocol. Each configured account is checked
 with its own `CLAUDE_CONFIG_DIR` or `CODEX_HOME`. OpenCode is provider-agnostic,
 so it remains `unknown` until it has a provider-neutral usage interface.
+Antigravity is `unknown` too: `agy` shows its quota only through `/usage`
+inside its own TUI.
 These are CLI-owned interfaces rather than a shared industry API; an older or
 changed client degrades to `unknown` or the last cached observation.
 
@@ -168,6 +144,7 @@ would run CODEX_HOME=~/.codex-cx1 codex <transcript seed, 1655 chars>
 | OpenCode | `~/.local/share/opencode/opencode.db` (SQLite) | `OPENCODE_DB_PATH` |
 | Claude Code | `~/.claude/projects/**/*.jsonl`, plus each account's `configDir` | `CLAUDE_PROJECTS_PATH` |
 | Codex | `~/.codex/sessions/**/rollout-*.jsonl`, plus each account's `codexHome` | `CODEX_HOME`, `CODEX_SESSIONS_PATH` |
+| Antigravity | `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl`, with titles and directories from `conversation_summaries.db` (SQLite, read-only) | none |
 | `agb` config | `~/.config/agentbridge/config.json` | `AGB_CONFIG_PATH` |
 | `agb` cache | `~/.cache/agentbridge/index.gob` | `AGB_CACHE_PATH`, `XDG_CACHE_HOME` |
 | Picker layout | `~/.cache/agentbridge/layout.json`, beside the cache | follows the cache |
@@ -181,6 +158,15 @@ Codex files each session as a rollout under `sessions/YYYY/MM/DD/` and archives
 one by moving it into `archived_sessions/`, so archived Codex sessions drop out
 of the list the way archived OpenCode ones do. Codex stores no title in the
 rollout, which is why a Codex row is titled by its opening prompt.
+
+Antigravity writes each conversation's steps as plaintext JSONL and indexes
+them in `conversation_summaries.db`. `agb` takes your prompts from the
+`<USER_REQUEST>` block of each user step and the replies from the model's text
+steps, and skips tool calls and their output. Conversations from the
+Antigravity IDE are indexed there too but have no plaintext transcript (their
+`.pb` files are opaque), so they are not listed. A conversation started with
+`agy -p` has no title until `agy` writes one, so it is titled by its opening
+prompt.
 
 ## Why it starts fast
 

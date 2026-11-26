@@ -101,7 +101,7 @@ func PrintHelp(out io.Writer) {
 	fmt.Fprint(out, strings.Join([]string{
 		"AgentBridge (agb)",
 		"",
-		"Browse OpenCode, Claude Code and Codex sessions, then open the picked one",
+		"Browse OpenCode, Claude Code, Codex and Antigravity sessions, then open the picked one",
 		"with any of them, in any configured account.",
 		"",
 		"Usage:",

@@ -94,6 +94,10 @@ func setupDestination(account Account, override SetupDestination, base string) (
 		}
 		dest.MCPConfig = filepath.Join(root, "config.toml")
 		dest.SkillsDir = filepath.Join(home, ".agents", "skills")
+	case SourceAntigravity:
+		// agy reads MCP servers from ~/.gemini/config/mcp_config.json, a
+		// format of its own that nothing here writes yet.
+		return dest, fmt.Errorf("agb sync does not manage Antigravity yet; remove %q from the profile's targets", account.Name)
 	case SourceOpencode:
 		root := os.Getenv("XDG_CONFIG_HOME")
 		if account.ConfigHome != "" {

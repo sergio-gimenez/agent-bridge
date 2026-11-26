@@ -1,14 +1,33 @@
-# Using multiple Claude Code accounts
+---
+title: Claude Code
+description: Use one or several Claude Code accounts from agb, each with its own CLAUDE_CONFIG_DIR, and move conversations between them.
+---
 
-`agb` can index and launch sessions from multiple Claude Code subscriptions.
-Each account keeps separate authentication, settings, and session storage while
-all accounts can work in the same project directories.
+# Claude Code
+
+With one Claude account there's nothing to set up. Install Claude Code, sign
+in, have a conversation, and `agb` lists it as
+<span class="agb-label agb-label--cc">CC</span>:
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+claude auth login
+```
+
+`agb` reads the transcripts under `~/.claude/projects`, resumes with
+`claude --resume <id>`, forks with `--fork-session`, and reads the account's
+5h and 7d limits so it can tell you when to move elsewhere. Other install
+routes are on the [Claude Code setup page](https://code.claude.com/docs/en/setup).
+
+The rest of this page is for running **several Claude subscriptions** side by
+side: each account keeps its own sign-in, settings and history, and every one of
+them can work in the same project directories.
 
 ## Prerequisites
 
-- Two or more Claude subscriptions, each using a different Claude account
+- Two or more Claude subscriptions, each on a different Claude account
 - Claude Code installed and available as `claude`
-- `agb` installed (see [Install](../README.md#install))
+- `agb` [installed](../getting-started/install.md)
 
 ## How isolation works
 
@@ -227,7 +246,7 @@ tool's account; the names share one list of targets.
 
 ### 3. Give it the shared setup
 
-If you keep skills, MCP servers or memory in a [setup profile](setup.md), add the
+If you keep skills, MCP servers or memory in a [setup profile](../setup.md), add the
 account to that profile's `targets`, and to `memory.share` if the accounts share
 memory:
 
@@ -247,7 +266,7 @@ agb plan     # every cc3 row now reads "present"
 
 A brand-new account has no memory of its own, so it only gets links: it starts
 with everything the other accounts already learned. An account that already
-has memory is merged into the store first (see [setup.md](setup.md)).
+has memory is merged into the store first (see [Share skills and MCPs](../setup.md)).
 
 ### 4. Re-install per-account integrations
 
@@ -263,7 +282,7 @@ agb herdr install --target cc3
 
 This installs Herdr's native session hook and agb's account-aware resume hook.
 The native hook alone records an ID but can restore it through the default
-account. See [restoring conversations in Herdr](herdr.md#restore-conversations-after-a-restart)
+account. See [restoring conversations in Herdr](../herdr.md#restore-conversations-after-a-restart)
 for verification, recovery and removal. Install on each machine running agents.
 
 A transcript viewer that only knows `~/.claude/projects` needs
